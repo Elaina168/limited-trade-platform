@@ -1,0 +1,16 @@
+# 构建产物与本机编辑器配置
+target/
+.idea/
+*.iml
+.vscode/
+
+# 本机凭证、环境配置与运行日志
+.env
+.env.*
+!.env.example
+application-local.yml
+application-local.yaml
+application-local.properties
+config/db.properties
+*.log
+logs/
