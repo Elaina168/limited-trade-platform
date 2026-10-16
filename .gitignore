@@ -1,5 +1,6 @@
 # 构建产物与本机编辑器配置
 target/
+tools/
 .idea/
 *.iml
 .vscode/
@@ -12,5 +13,6 @@ application-local.yml
 application-local.yaml
 application-local.properties
 config/db.properties
+config/local-accounts.txt
 *.log
 logs/

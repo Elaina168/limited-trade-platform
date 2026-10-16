@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.activity.ActivityMapper">
+
+    <insert id="insertActivity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO activity (product_id, name, total_quantity, remaining_quantity, starts_at, ends_at)
+        VALUES (#{productId}, #{name}, #{totalQuantity}, #{remainingQuantity}, #{startsAt}, #{endsAt})
+    </insert>
+
+    <select id="findById" resultType="com.elaina.limitedtrade.activity.Activity">
+        SELECT id, product_id, name, total_quantity, remaining_quantity, starts_at, ends_at
+        FROM activity WHERE id = #{id}
+    </select>
+
+    <select id="findByIdForUpdate" resultType="com.elaina.limitedtrade.activity.Activity">
+        SELECT id, product_id, name, total_quantity, remaining_quantity, starts_at, ends_at
+        FROM activity WHERE id = #{id}
+        FOR UPDATE
+    </select>
+
+    <update id="deductQuantity">
+        UPDATE activity SET remaining_quantity = remaining_quantity - #{quantity}
+        WHERE id = #{id} AND remaining_quantity &gt;= #{quantity}
+          AND starts_at &lt;= #{now} AND ends_at &gt; #{now}
+    </update>
+
+    <update id="restoreQuantity">
+        UPDATE activity SET remaining_quantity = remaining_quantity + #{quantity}
+        WHERE id = #{id}
+    </update>
+</mapper>

@@ -1,0 +1,20 @@
+spring:
+  config:
+    import: file:./config/db.properties
+  application:
+    name: limited-trade-platform
+  datasource:
+    url: ${db.url}
+    username: ${db.username}
+    password: ${db.password}
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+server:
+  port: 8080

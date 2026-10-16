@@ -1,0 +1,5 @@
+-- 开发库和测试库分别执行一次，保留已有订单数据。
+ALTER TABLE trade_order
+    ADD COLUMN paid_at DATETIME NULL COMMENT '模拟支付成功时间',
+    ADD COLUMN ended_at DATETIME NULL COMMENT '取消或关闭时间',
+    MODIFY COLUMN status VARCHAR(20) NOT NULL COMMENT 'PENDING_PAYMENT、PAID、CANCELED';

@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/limited_trade_platform_test
+
+# 测试手动调用扫描入口，避免后台任务干扰夹具和断言。
+app:
+  order-timeout:
+    enabled: false

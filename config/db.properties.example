@@ -1,0 +1,4 @@
+# 复制为同目录 db.properties，填写本机数据库账号密码；真实文件不提交 Git。
+db.url=jdbc:mysql://127.0.0.1:3306/limited_trade_platform
+db.username=
+db.password=

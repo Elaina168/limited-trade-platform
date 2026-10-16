@@ -1,0 +1,12 @@
+-- 在新项目的开发库与测试库中分别执行；重复执行会报表已存在，不覆盖已有数据。
+CREATE TABLE product (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '商品编号',
+    name VARCHAR(100) NOT NULL COMMENT '商品名称',
+    price DECIMAL(10, 2) NOT NULL COMMENT '当前销售单价',
+    stock INT NOT NULL COMMENT '当前可售库存',
+    status VARCHAR(20) NOT NULL COMMENT '状态：ON_SALE 或 OFF_SALE',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
