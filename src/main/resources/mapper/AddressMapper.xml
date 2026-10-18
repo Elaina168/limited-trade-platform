@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.address.AddressMapper">
+    <resultMap id="addressMap" type="com.elaina.limitedtrade.address.UserAddress">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="recipientName" column="recipient_name"/>
+        <result property="phone" column="phone"/>
+        <result property="province" column="province"/>
+        <result property="city" column="city"/>
+        <result property="district" column="district"/>
+        <result property="detailAddress" column="detail_address"/>
+        <result property="defaultAddress" column="is_default"/>
+    </resultMap>
+    <sql id="addressColumns">id,user_id,recipient_name,phone,province,city,district,detail_address,is_default</sql>
+    <select id="findUserAddresses" resultMap="addressMap">
+        SELECT <include refid="addressColumns"/> FROM user_address
+        WHERE user_id = #{userId} ORDER BY is_default DESC,id ASC
+    </select>
+    <select id="countUserAddresses" resultType="long">
+        SELECT COUNT(*) FROM user_address WHERE user_id = #{userId}
+    </select>
+    <select id="findOwnedAddress" resultMap="addressMap">
+        SELECT <include refid="addressColumns"/> FROM user_address WHERE id = #{id} AND user_id = #{userId}
+    </select>
+    <insert id="insertAddress" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_address(user_id,recipient_name,phone,province,city,district,detail_address,is_default)
+        VALUES (#{userId},#{recipientName},#{phone},#{province},#{city},#{district},#{detailAddress},#{defaultAddress})
+    </insert>
+    <update id="updateDetails">
+        UPDATE user_address SET recipient_name=#{recipientName},phone=#{phone},province=#{province},
+            city=#{city},district=#{district},detail_address=#{detailAddress}
+        WHERE id=#{id} AND user_id=#{userId}
+    </update>
+    <delete id="deleteOwnedAddress">
+        DELETE FROM user_address WHERE id=#{id} AND user_id=#{userId}
+    </delete>
+    <update id="clearDefault">
+        UPDATE user_address SET is_default=0 WHERE user_id=#{userId} AND is_default=1
+    </update>
+    <update id="markDefault">
+        UPDATE user_address SET is_default=1 WHERE id=#{id} AND user_id=#{userId}
+    </update>
+</mapper>

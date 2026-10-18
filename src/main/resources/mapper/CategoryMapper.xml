@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.category.CategoryMapper">
+    <select id="findAll" resultType="com.elaina.limitedtrade.category.Category">
+        SELECT id, name FROM product_category ORDER BY id ASC
+    </select>
+
+    <select id="findById" resultType="com.elaina.limitedtrade.category.Category">
+        SELECT id, name FROM product_category WHERE id=#{id}
+    </select>
+
+    <insert id="insertCategory" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO product_category (name) VALUES (#{name})
+    </insert>
+
+    <update id="updateName">
+        UPDATE product_category SET name=#{name} WHERE id=#{id}
+    </update>
+</mapper>

@@ -62,6 +62,7 @@ class ActivityConcurrencyTest {
     @AfterEach
     void removeOwnedFixtures() {
         if (fixtureOwned) {
+            jdbcTemplate.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE product_id=9601)");
             jdbcTemplate.update("DELETE FROM trade_order WHERE product_id=9601");
             jdbcTemplate.update("DELETE FROM activity WHERE id=9601");
             jdbcTemplate.update("DELETE FROM product WHERE id=9601");

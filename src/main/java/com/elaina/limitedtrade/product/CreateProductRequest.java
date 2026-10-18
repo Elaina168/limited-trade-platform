@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Positive;
 
 public record CreateProductRequest(
         @NotBlank(message = "商品名称不能为空")
@@ -21,5 +22,8 @@ public record CreateProductRequest(
 
         @NotNull(message = "初始库存不能为空")
         @Min(value = 0, message = "初始库存不能为负数")
-        Integer stock) {
+        Integer stock,
+
+        @Positive(message = "分类编号必须大于0")
+        Long categoryId) {
 }

@@ -21,4 +21,10 @@ public interface ProductMapper {
     int deductStock(@Param("id") long id, @Param("quantity") int quantity);
 
     int restoreStock(@Param("id") long id, @Param("quantity") int quantity);
+
+    long countSearchProducts(@Param("categoryId") Long categoryId, @Param("keyword") String keyword);
+
+    List<ProductSearchItem> searchProducts(@Param("categoryId") Long categoryId,
+                                          @Param("keyword") String keyword,
+                                          @Param("offset") long offset, @Param("limit") int limit);
 }

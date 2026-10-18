@@ -9,6 +9,7 @@ public class Product {
     private BigDecimal price;
     private Integer stock;
     private String status;
+    private Long categoryId;
 
     public Product() {
     }
@@ -60,4 +61,7 @@ public class Product {
     public void setStatus(String status) {
         this.status = status;
     }
+
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
 }

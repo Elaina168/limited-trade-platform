@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.cart.CartItemMapper">
+    <select id="findUserItems" resultType="com.elaina.limitedtrade.cart.CartItemResponse">
+        SELECT c.product_id, p.name, p.price, p.stock, p.status, c.quantity
+        FROM cart_item c JOIN product p ON p.id=c.product_id
+        WHERE c.user_id=#{userId}
+        ORDER BY c.product_id ASC
+    </select>
+
+    <insert id="setQuantity">
+        INSERT INTO cart_item (user_id, product_id, quantity)
+        VALUES (#{userId}, #{productId}, #{quantity})
+        ON DUPLICATE KEY UPDATE quantity=#{quantity}
+    </insert>
+
+    <delete id="deleteItem">
+        DELETE FROM cart_item WHERE user_id=#{userId} AND product_id=#{productId}
+    </delete>
+</mapper>

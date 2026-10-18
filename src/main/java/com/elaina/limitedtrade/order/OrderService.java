@@ -8,7 +8,10 @@ import java.util.Objects;
 import com.elaina.limitedtrade.activity.Activity;
 import com.elaina.limitedtrade.activity.ActivityMapper;
 import com.elaina.limitedtrade.product.Product;
+import com.elaina.limitedtrade.product.ProductCache;
 import com.elaina.limitedtrade.product.ProductMapper;
+import com.elaina.limitedtrade.order.message.OrderTimeoutOutbox;
+import com.elaina.limitedtrade.order.message.OrderTimeoutOutboxMapper;
 import com.elaina.limitedtrade.user.AppUserMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,13 +26,18 @@ public class OrderService {
     private final ProductMapper productMapper;
     private final OrderMapper orderMapper;
     private final ActivityMapper activityMapper;
+    private final ProductCache productCache;
+    private final OrderTimeoutOutboxMapper outboxMapper;
 
     public OrderService(AppUserMapper appUserMapper, ProductMapper productMapper, OrderMapper orderMapper,
-                        ActivityMapper activityMapper) {
+                        ActivityMapper activityMapper, ProductCache productCache,
+                        OrderTimeoutOutboxMapper outboxMapper) {
         this.appUserMapper = appUserMapper;
         this.productMapper = productMapper;
         this.orderMapper = orderMapper;
         this.activityMapper = activityMapper;
+        this.productCache = productCache;
+        this.outboxMapper = outboxMapper;
     }
 
     @Transactional
@@ -83,6 +91,16 @@ public class OrderService {
         order.setCreatedAt(now);
         order.setExpiresAt(now.plusMinutes(15));
         orderMapper.insertOrder(order);
+        // 订单与发送意图同事务保存；幂等提前返回不会再登记事件。
+        OrderTimeoutOutbox event = new OrderTimeoutOutbox();
+        event.setOrderId(order.getId());
+        event.setExpiresAt(order.getExpiresAt());
+        event.setStatus("PENDING");
+        event.setAttemptCount(0L);
+        event.setNextAttemptAt(now);
+        event.setCreatedAt(now);
+        outboxMapper.insertEvent(event);
+        productCache.evictAfterCommit();
         return new CreateOrderResult(order, true);
     }
 
@@ -125,6 +143,7 @@ public class OrderService {
             activityMapper.restoreQuantity(order.getActivityId(), order.getQuantity());
         }
         productMapper.restoreStock(order.getProductId(), order.getQuantity());
+        productCache.evictAfterCommit();
         return orderMapper.findOwnedOrder(id, userId);
     }
 
@@ -139,6 +158,7 @@ public class OrderService {
             activityMapper.restoreQuantity(order.getActivityId(), order.getQuantity());
         }
         productMapper.restoreStock(order.getProductId(), order.getQuantity());
+        productCache.evictAfterCommit();
         return true;
     }
 

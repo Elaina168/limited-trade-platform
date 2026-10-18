@@ -1,15 +1,46 @@
 spring:
   config:
-    import: file:./config/db.properties
+    import:
+      - file:./config/db.properties
+      - file:./config/rabbitmq.properties
   application:
     name: limited-trade-platform
   datasource:
     url: ${db.url}
     username: ${db.username}
     password: ${db.password}
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      connect-timeout: 2s
+      timeout: 2s
+      repositories:
+        enabled: false
   jackson:
     deserialization:
       accept-float-as-int: false
+  rabbitmq:
+    host: ${mq.host}
+    port: ${mq.port}
+    username: ${mq.username}
+    password: ${mq.password}
+    virtual-host: ${mq.virtual-host}
+    connection-timeout: 2s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 1
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
+          multiplier: 2
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
@@ -18,3 +49,14 @@ mybatis:
 
 server:
   port: 8080
+
+app:
+  scheduling:
+    enabled: true
+  order-message:
+    enabled: true
+    name-prefix: limited-trade
+    wait-ttl-ms: 900000
+  product-cache:
+    enabled: true
+    key: limited-trade:product:on-sale:v1

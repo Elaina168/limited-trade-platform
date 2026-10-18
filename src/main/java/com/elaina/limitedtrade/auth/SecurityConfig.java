@@ -28,12 +28,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET,
-                                "/api/ping", "/api/products", "/api/auth/csrf").permitAll()
+                                "/api/ping", "/api/products", "/api/products/search",
+                                "/api/categories", "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/activities/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()
-                        .anyRequest().denyAll())
+                        .requestMatchers("/api/cart/items", "/api/cart/items/**").authenticated()
+                        .requestMatchers("/api/addresses", "/api/addresses/**").authenticated()
+                .anyRequest().denyAll())
                 .formLogin(form -> form
                         .loginProcessingUrl("/api/auth/login")
                         .successHandler((request, response, authentication) ->

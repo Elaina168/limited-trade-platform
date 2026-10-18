@@ -68,6 +68,7 @@ class ActivityOrderApiTest {
     @AfterEach
     void removeOwnedFixtures() {
         if (fixtureOwned) {
+            jdbcTemplate.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE user_id=7401)");
             jdbcTemplate.update("DELETE FROM trade_order WHERE user_id=7401");
             jdbcTemplate.update("DELETE FROM activity WHERE product_id IN (9401,9402)");
             jdbcTemplate.update("DELETE FROM product WHERE id IN (9401,9402)");

@@ -14,5 +14,6 @@ application-local.yaml
 application-local.properties
 config/db.properties
 config/local-accounts.txt
+config/rabbitmq.properties
 *.log
 logs/

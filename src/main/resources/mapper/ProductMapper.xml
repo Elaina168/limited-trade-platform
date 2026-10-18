@@ -4,26 +4,26 @@
 <mapper namespace="com.elaina.limitedtrade.product.ProductMapper">
 
     <select id="findOnSaleProducts" resultType="com.elaina.limitedtrade.product.Product">
-        SELECT id, name, price, stock, status
+        SELECT id, name, price, stock, status, category_id
         FROM product
         WHERE status = 'ON_SALE'
         ORDER BY id ASC
     </select>
 
     <select id="findById" resultType="com.elaina.limitedtrade.product.Product">
-        SELECT id, name, price, stock, status
+        SELECT id, name, price, stock, status, category_id
         FROM product
         WHERE id = #{id}
     </select>
 
     <insert id="insertProduct" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO product (name, price, stock, status)
-        VALUES (#{name}, #{price}, #{stock}, #{status})
+        INSERT INTO product (name, price, stock, status, category_id)
+        VALUES (#{name}, #{price}, #{stock}, #{status}, #{categoryId})
     </insert>
 
     <update id="updateDetails">
         UPDATE product
-        SET name = #{request.name}, price = #{request.price}
+        SET name = #{request.name}, price = #{request.price}, category_id = #{request.categoryId}
         WHERE id = #{id}
     </update>
 
@@ -43,4 +43,26 @@
         SET stock = stock + #{quantity}
         WHERE id = #{id}
     </update>
+
+    <sql id="searchConditions">
+        WHERE p.status = 'ON_SALE'
+        <if test="categoryId != null">
+            AND p.category_id = #{categoryId}
+        </if>
+        <if test="keyword != null">
+            AND p.name LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+        </if>
+    </sql>
+
+    <select id="countSearchProducts" resultType="long">
+        SELECT COUNT(*) FROM product p
+        <include refid="searchConditions"/>
+    </select>
+
+    <select id="searchProducts" resultType="com.elaina.limitedtrade.product.ProductSearchItem">
+        SELECT p.id, p.name, p.price, p.stock, p.status, p.category_id, c.name AS category_name
+        FROM product p LEFT JOIN product_category c ON c.id=p.category_id
+        <include refid="searchConditions"/>
+        ORDER BY p.id ASC LIMIT #{limit} OFFSET #{offset}
+    </select>
 </mapper>

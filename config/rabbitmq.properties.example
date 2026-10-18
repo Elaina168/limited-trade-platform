@@ -1,0 +1,7 @@
+# 复制为同目录rabbitmq.properties，填写本项目独立账号；真实文件被Git忽略。
+mq.host=127.0.0.1
+mq.port=5672
+mq.username=limited_trade
+mq.password=CHANGE_ME
+mq.virtual-host=limited-trade
+mq.test-virtual-host=limited-trade-test
