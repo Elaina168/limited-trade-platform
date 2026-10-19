@@ -8,6 +8,11 @@
         VALUES (#{productId}, #{name}, #{totalQuantity}, #{remainingQuantity}, #{startsAt}, #{endsAt})
     </insert>
 
+    <select id="findAll" resultType="com.elaina.limitedtrade.activity.Activity">
+        SELECT id, product_id, name, total_quantity, remaining_quantity, starts_at, ends_at
+        FROM activity ORDER BY id DESC
+    </select>
+
     <select id="findById" resultType="com.elaina.limitedtrade.activity.Activity">
         SELECT id, product_id, name, total_quantity, remaining_quantity, starts_at, ends_at
         FROM activity WHERE id = #{id}

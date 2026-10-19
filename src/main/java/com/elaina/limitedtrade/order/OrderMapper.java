@@ -29,6 +29,12 @@ public interface OrderMapper {
 
     TradeOrder findById(long id);
 
+    TradeOrder findByIdForUpdate(long id);
+
+    int markShipped(@Param("id") long id);
+
+    int markCompleted(@Param("id") long id, @Param("userId") long userId);
+
     long countAdminOrders(@Param("status") String status, @Param("userId") Long userId);
 
     List<TradeOrder> findAdminOrders(@Param("status") String status, @Param("userId") Long userId,

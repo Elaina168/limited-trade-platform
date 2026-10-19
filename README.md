@@ -4,9 +4,9 @@
 
 ## 当前状态
 
-2026-10-18：已实现商品维护、一级商品分类与分页筛选、用户购物车、用户收货地址、Session 登录与角色权限、创建订单与本人订单查询、模拟支付、主动取消、定时超时关闭、管理员订单分页筛选、最小限时限量活动、Redis 商品列表缓存，以及 Outbox + RabbitMQ 可靠超时消息。购物车只保存购买意向；创建订单才扣商品库存，活动订单还扣活动名额；取消或关闭只归还一次。尚未实现注册功能。
+2026-10-19：已实现活动专用满减券、活动/普通单商品下单地址快照、Redis Lua下单入口限流、管理员整单发货登记与买家确认收货、普通商品购物车多商品结算、订单明细与收货地址快照，以及商品维护、一级商品分类与分页筛选、用户购物车、用户收货地址、Session 登录与角色权限、创建订单与本人订单查询、模拟支付、主动取消、定时超时关闭、管理员订单分页筛选、最小限时限量活动、Redis 商品列表缓存，以及 Outbox + RabbitMQ 可靠超时消息。购物车只保存购买意向；创建订单才扣商品库存，活动订单还扣活动名额；取消或关闭只归还一次。支持用户注册，默认创建普通用户账号。
 
-本次学习停在用户收货地址及代码讲解。地址簿支持本人新增、列表、完整修改、删除和设置默认；所有写入先锁用户行，保持每用户最多一个默认项。完整新增代码与调用链见 [第十四阶段学习记录](docs/learning/14-address.md)。本阶段验收后等待“继续”再推进。
+当前完成第二十一阶段：一次补齐当前用户与管理员业务页面，使用同源HTML/CSS/原生JavaScript，无前端框架或CDN。页面源码与使用说明见 [第二十一阶段学习记录](docs/learning/21-web-ui.md)。按用户最新要求仅做关联最小测试：6项真实数据库/MockMvc用例与浏览器主线及修复用例通过，没有全量回归；跳过测试打包已更新JAR。第二十阶段的530项全量结果保留为历史证据，不表示本次重新全量通过。
 
 ## 学习方式
 
@@ -15,6 +15,8 @@
 助手先提供当前阶段的草稿和原始代码，解释关键部分；学习者阅读，不懂就问，并逐步练习修改和独立实现。不一次性生成完整项目，每阶段验收后等待“继续”再推进。
 
 每阶段同时讲解业务和实际源码，明确新增、修改的文件，并按请求对象、Controller、Service、Mapper、返回对象的调用顺序解析关键语句；不能只列功能或文件职责。
+
+2026-10-19起按用户要求，每次新增功能只做覆盖本次改动的最小必要验证；发现实际失败才补关联检查，功能验证通过即停止，不自动全量回归。
 
 ## 参考项目
 
@@ -63,6 +65,8 @@ SOURCE sql/007_order_timeout_outbox.sql;
 SOURCE sql/008_product_category.sql;
 SOURCE sql/009_cart_item.sql;
 SOURCE sql/010_user_address.sql;
+SOURCE sql/011_order_checkout.sql;
+SOURCE sql/012_order_shipment.sql;
 SOURCE sql/seed.sql;
 
 USE limited_trade_platform_test;
@@ -76,11 +80,15 @@ SOURCE sql/007_order_timeout_outbox.sql;
 SOURCE sql/008_product_category.sql;
 SOURCE sql/009_cart_item.sql;
 SOURCE sql/010_user_address.sql;
+SOURCE sql/011_order_checkout.sql;
+SOURCE sql/012_order_shipment.sql;
 ```
 
 以上命令仅用于首次初始化，当前本机已执行完毕，请勿重复执行。脚本遇到已有表或重复编号会报错，不覆盖原数据。`seed.sql` 只用于开发库，测试用例自行插入测试库数据，并通过事务回滚。
 
 本机已生成 `learning_admin` 和 `learning_user` 两个学习账号，随机密码只保存在被 Git 忽略的 `config/local-accounts.txt`。该文件不进入 JAR 或 Git。新环境的账号初始化与登录操作见 [登录与权限学习记录](docs/learning/04-security.md)，不能假设其他机器存在这些本机账号。
+
+需要更多页面演示内容时，在完成全部结构迁移后，可通过 MySQL 客户端执行 `SOURCE sql/demo_catalog.sql;`。该脚本只写开发库，追加4个分类、8个在售商品、3个活动和3种活动满减券，名称均以“演示·”开头；首次执行时活动和券从当前时间起有效30天，重复执行不覆盖现有记录、不补库存和名额、不延长有效期。本机已执行，无需再次导入；在活动详情领券后，即可选择本人优惠券下单。
 
 准备好配置与数据库后，在 PowerShell 中从项目根目录执行：
 
@@ -378,11 +386,141 @@ API先28项失败（缺路由403），实现后28项通过；并发3项、真实
 
 本机证据：`tools/address-api-red.log`、`address-api-green.log`、`address-integration.log`、`address-package.log`、`address-before.tsv`、`address-after.tsv`、`address-progress.md`，不进入Git。
 
-## 计划范围
+## 多商品结算阶段记录（2026-10-19）
 
-- 初期技术：Spring Boot、MyBatis、MySQL；后续按阶段接入 Spring Security、Redis。
-- 第一版主线：商品查询与维护、单商品下单、本人订单查询、库存扣减、模拟支付、取消、超时关闭与库存归还。
-- 基础稳定后：最小限量活动和商品缓存；MQ 按实际进度评估。
-- 不将真实支付、复杂营销、微服务或完整前端列入第一版必做范围。
+设计见 [结算设计](docs/plans/2026-10-19-checkout-design.md)，实施见 [结算计划](docs/plans/2026-10-19-checkout-implementation.md)。011已在开发库和测试库各执行一次；先把历史单商品快照迁入 `order_item`，再移除主表商品列，保留订单编号、归属、金额、状态、时间和幂等标识。`order_address` 保存新结算地址快照；原单商品及历史订单没有地址，不补造内容。当前共十张业务表。不要重跑001—011。
 
-以上为计划，不能作为已实现能力或简历成果。
+| 接口/行为 | 本阶段约定 |
+|---|---|
+| POST `/api/orders/checkout` | `productIds`、`addressId`、`requestId`；首次201、同请求重试200 |
+| `productIds` | 1—50个不重复的正整数，代表本人购物车勾选商品；数量取购物车 |
+| `addressId` | 必须是本人地址，显式选择；默认地址不会被服务器自动代选 |
+| 商品和金额 | 锁定数据库商品读取名称、现价并扣库存；合计超过DECIMAL(20,2)支持范围409 |
+| 原 POST `/api/orders` | 保留单商品请求及可空活动编号；生成一条明细，本阶段仍不强制地址 |
+| 本人订单响应 | 主信息加 `items` 和可空 `address`；原顶层商品字段移到明细中 |
+| 管理员订单分页 | 每张订单含 `items`，保留 `userId`，不返回收货地址 |
+| 支付、取消、超时 | 支付整单；取消/关闭按明细只归还一次，取消不重新填回购物车 |
+
+全部写入需登录和CSRF，ADMIN也只能结算本人购物车及地址。重复商品编号400；缺少所选购物车项、商品下架或库存不足409；不存在/非本人地址404。客户端价格、金额、数量及归属额外字段不作为结算依据。未选中购物车项保留。
+
+CART幂等比较入口类型、排序后的商品编号集合和首次请求地址编号；数量不是结算请求字段，重试返回首次成交数量，不重新读取后来的购物车。商品数组乱序等价，改变集合或地址则409；与DIRECT共用同一用户requestId命名空间。成功后修改/删除地址或重新加入购物车不影响重试，亦不再删除新的购买意向。
+
+购物车写入补齐用户行锁，与下单和地址写入串行；商品按编号升序锁定。订单、明细、地址、Outbox与购物车删除均由本地事务保护，提交后才失效商品缓存。本人列表/详情与管理员分页批量装配明细，不逐订单查询，使用只读一致性事务。
+
+本阶段完整离线package：381项通过，0失败、0错误、0跳过。结算API24项、真实事务/Redis/Session11项、并发7项及新增RabbitMQ多商品超时1项，共新增43项。金额边界先复现SQL溢出失败，再改为409，完整回归通过。独立只读复核无额外重要发现。开发原八表公开字段规范化快照前后SHA256一致，测试十表为空且无触发器；随机Redis键/MQ测试拓扑无残留，JAR不含本机凭据、测试配置、工具或测试类。接口检查使用MockMvc和真实MySQL；Redis缓存及RabbitMQ超时队列另有真实集成覆盖，不作为真实HTTP或公网压测证据。未重试此前被拒绝的临时HTTP进程，未新增依赖、下载、提交或推送。本机证据为 `tools/checkout-package.log`、`checkout-order-regression.log`、`checkout-transaction.log`、`checkout-concurrency.log`、`checkout-amount-red.log`、`checkout-before.tsv`、`checkout-after.tsv` 和 `checkout-progress.md`，均不进入Git。
+
+## 订单履约阶段记录（2026-10-19）
+
+设计见 [履约设计](docs/plans/2026-10-19-fulfillment-design.md)，实施见 [履约计划](docs/plans/2026-10-19-fulfillment-implementation.md)。012已在开发和测试库各执行一次；创建空 `order_shipment`，订单编号为主键及外键，保存carrier、tracking_no、shipped_at、可空received_at；时间CHECK要求收货时间不早于发货时间。主表只更新状态列注释，不改已有业务值。当前十一张业务表，不重跑001—012。
+
+| 接口 | 规则 |
+|---|---|
+| GET `/api/admin/orders/{id}` | ADMIN查看订单详情，含订单地址快照和可空shipment，用于履约；复用OrderResponse |
+| POST `/api/admin/orders/{id}/ship` | ADMIN+CSRF，carrier和trackingNo必填；已支付且有地址快照才允许发货，200及详情 |
+| POST `/api/orders/{id}/receive` | 本人+CSRF，无正文；SHIPPED转COMPLETED，200及详情，非本人/不存在404 |
+| GET `/api/admin/orders?status=...` | 新增支持SHIPPED、COMPLETED；列表仍不返回地址，新增可空shipment |
+
+承运方最长50字符，运单号最长64字符，非空白、保存前strip，并拒绝strip后为空的Unicode空白输入；仅人工登记文本，不对接真实承运/轨迹/签收API。相同发货内容重试SHIPPED/COMPLETED返回原记录；改变内容409，不允许覆盖首次运单。重复确认已完成订单保留原receivedAt。待支付、已支付、取消、关闭不能确认收货；非已支付订单不能首次发货。
+
+所有履约写入先锁订单主行，再按原状态条件更新；状态和发货记录同事务。ship记录INSERT失败恢复PAID；receive记录UPDATE失败恢复SHIPPED。履约不扣减或归还库存/活动名额，不改变购物车、地址簿、Outbox及缓存；旧取消和超时仍只处理待支付，新状态不会误归还。endedAt仍用于取消/关闭，收货时间保存在shipment.receivedAt。
+
+订单响应增加可空shipment（carrier/trackingNo/shippedAt/receivedAt），不公开其内部orderId。loadDetails批量装配发货记录，主表加明细、地址、发货共四次查询，不逐订单查询。管理员详情有明确角色边界；普通用户仍只能读取自己的订单，ADMIN确认收货也限本人。
+
+完整离线package417项通过，0失败、0错误、0跳过；本阶段新增36项：API25、事务/Redis/Session4、并发5，以及真实RabbitMQ两项新状态回归。独立只读复核发现一项Unicode空白输入问题，先以两条失败测试复现，再在strip后补非空检查，最终全量通过。开发原十表公开字段SHA256前后一致，新发货表0；测试十一表为空且无触发器；随机Redis键及MQ拓扑无残留，JAR凭据/工具/测试边界通过。保留上一阶段全部未提交代码，本阶段不新增依赖/下载/HTTP进程，不提交推送。接口由MockMvc与真实MySQL验证，Redis/RabbitMQ为本机集成证据，不能作为实际承运/签收、公网或生产压测证明。本机证据为 `tools/fulfillment-package.log`、`fulfillment-api-red.log`、`fulfillment-api-green.log`、`fulfillment-integration.log`、`fulfillment-unicode-red.log`、`fulfillment-before.tsv`、`fulfillment-after.tsv` 及 `fulfillment-progress.md`，均不进入Git。
+
+## Redis Lua下单入口限流阶段记录（2026-10-19）
+
+设计见 [限流设计](docs/plans/2026-10-19-order-rate-limit-design.md)，实施见 [限流计划](docs/plans/2026-10-19-order-rate-limit-implementation.md)。本阶段无数据库结构变化，没有013迁移；不重跑001—012。复用现有Spring Data Redis/Redis，不新增依赖或下载。
+
+| 配置项 | 默认值 | 含义 |
+|---|---|---|
+| `app.order-rate-limit.enabled` | true | 是否启用下单入口限流 |
+| `app.order-rate-limit.max-requests` | 5 | 每窗口最多放行次数 |
+| `app.order-rate-limit.window-seconds` | 10 | 从该用户首个请求开始的固定窗口秒数 |
+| `app.order-rate-limit.key-prefix` | limited-trade:rate-limit:order | 独立额度键前缀，后接:user:用户编号 |
+
+只作用于POST `/api/orders`和POST `/api/orders/checkout`，按认证身份中的用户编号共享预算，ADMIN购买也适用。同一用户重新登录或换Session不重置额度，不采用客户端userId、IP转发头或requestId作为限流身份。Spring Security认证/CSRF、JSON解析及注解参数校验在Controller方法之前处理，不计额度；进入方法后再发生的业务失败（含Service业务校验）和幂等重试都计入尝试，数据库回滚不退额度。
+
+Lua在Redis内原子读取、检查及计数；首次SET带PX，后续放行INCR不续期，拒绝不递增、不续期。过期后下一次请求重建窗口。429的Retry-After是剩余毫秒向下取整秒数再加1的保守正整数，TTL为0也拒绝；无TTL/非法计数/错误类型等损坏状态报错，不修复/静默放行。连接失败或查询超时503；其他脚本错误继续传播。限流发生在下单事务之前，拒绝不修改订单、库存、活动名额、购物车、地址或Outbox。
+
+查询、支付、取消、履约、管理员其他操作和直接调用Service不受本次Controller入口限流。原商品缓存及afterCommit逻辑不改；不同实例须共用Redis、键前缀和参数才能共享规则。固定窗口允许边界突发，不是严格滚动QPS限制或防DDoS能力。内部幂等约束保持，但重试在额度耗尽时可能先429，窗口恢复后仍按原规则返回原订单。
+
+配置由@ConfigurationProperties严格绑定，未知字段/非正限额和窗口/非法前缀启动失败；窗口转毫秒用long。测试profile默认关闭，专项明确开启随机前缀，禁用不访问Redis。Lua文件打入JAR由DefaultRedisScript加载，键与商品缓存隔离，不FLUSHDB或SCRIPT FLUSH。
+
+完整离线package450项通过，0失败、0错误、0跳过；新增33项：入口API9、真实Redis/Lua10、配置启动校验10、真实连接拒绝/受控超时/禁用4。API先9项失败再实现通过；独立只读复核无Critical/Important/Minor。开发十一表数据保持，测试十一表为空且无触发器，随机Redis键/MQ测试拓扑无残留；JAR中Lua与源码字节一致且不含本机凭据/测试/工具。接口证据为MockMvc及真实MySQL；共享预算/TTL为真实Redis专项，连接拒绝为真实关闭端口，超时为受控外部调用异常。未新增真实HTTP、多应用进程部署、生产压测或公网防护证据。保留此前全部改动，不提交推送。本机证据为 `tools/rate-limit-package.log`、`rate-limit-api-red.log`、`rate-limit-api-green.log`、`rate-limit-integration.log`、`rate-limit-before.tsv`、`rate-limit-after.tsv` 和 `rate-limit-progress.md`，均不进入Git。
+
+## 活动专用满减券阶段记录（2026-10-19）
+
+设计见 [活动券设计](docs/plans/2026-10-19-activity-coupon-design.md)，实现见 [实施计划](docs/plans/2026-10-19-activity-coupon-implementation.md)，源码说明见 [第十八阶段](docs/learning/18-activity-coupon.md)。013已在开发库和测试库各执行一次，当前共十四张业务表；不要重跑001—013。历史订单应付不变、优惠0，原金额等于应付。
+
+| 接口 | 本阶段约定 |
+|---|---|
+| POST `/api/admin/coupons` | ADMIN+CSRF，创建活动满减券；activityId/name/thresholdAmount/discountAmount/totalQuantity/claimStartsAt/claimEndsAt/useStartsAt/useEndsAt |
+| GET `/api/activities/{activityId}/coupons` | 公开查询绑定该活动的券规则，保留过期记录 |
+| POST `/api/coupons/{id}/claim` | 登录+CSRF；id是券规则编号，每人每种限领一张，重复领取200返回原用户券 |
+| GET `/api/coupons/mine` | 仅本人，用户券id/status/claimedAt/orderId/coupon/expired |
+| POST `/api/orders` | 新增可空正数userCouponId，选择本人领取记录id，仅用于相同活动；原四字段仍可使用 |
+
+领取和使用均为开始含、截止不含，固定统一截止；领取结束不晚于使用结束，使用区间在绑定活动内。减额和门槛均为正、减额严格小于门槛。规则只创建，不提供修改/作废/叠加/自动选券。普通购物车结算不使用券，原DIRECT没有地址的履约边界保持。
+
+领券只扣券发放余量，不扣商品库存或活动销售名额。活动下单按用户→活动→商品→用户券取得锁，等待结束后检查时间；券AVAILABLE→RESERVED，保存成交规则与金额快照。订单响应新增originalAmount/discountAmount/coupon，totalAmount继续表示应付；明细lineAmount保持未优惠金额。例如129×2=258，满200减20，应付238。
+
+支付同事务RESERVED→USED，券在下单后过期仍按成交金额支付，但订单15分钟期限保持。取消/超时成功转换订单状态才归还库存/名额并释放当前订单占用，用户券回AVAILABLE；已过期仍不可再次下单。取消不退发放额度，旧订单保留优惠快照，迟到的旧关闭事件不会释放新单占用。幂等比较加入userCouponId，重试先返回原订单，不重新判断券期限或扣资源。
+
+新增专项44项通过：创建/领取API15、订单API13、真实事务/并发16。为验证回滚断言，临时移除写事务注解后6项全部失败，源码按字节恢复后44项全绿。完整离线package494项通过，0失败/错误/跳过，BUILD SUCCESS；本轮43个测试类XML交叉核对一致。一次独立只读复核无Critical/Important/Minor。开发原十一表公开字段快照前后一致，新三表为空；测试十四表为空且无触发器，随机Redis键与RabbitMQ测试拓扑无残留，JAR的券Mapper/Lua与源码字节一致且不含本机配置/凭据/工具/测试资源。
+
+接口证据为MockMvc+真实MySQL，并发为同进程多线程真实数据库事务，不作为生产压测、真实HTTP部署或真实支付证明。本机证据在忽略的tools/coupon-*.log、coupon-before/after.tsv和coupon-progress.md。保留此前未提交内容，本阶段未新增依赖、下载安装、工作树、提交或推送。
+
+## 活动下单地址接入阶段记录（2026-10-19）
+
+源码说明见 [第十九阶段](docs/learning/19-direct-order-address.md)。仅修改CreateOrderRequest和OrderService两个生产文件，复用本人地址查询、order_address快照、原订单响应与履约。没有新表、迁移或依赖，不重复执行已有迁移。
+
+POST `/api/orders` 新增可选正数addressId，活动与普通DIRECT均可选择本人地址；省略仍保持旧行为。不存在或非本人地址404，非正数400。原Java四/五参构造保留。requestId幂等比较加入快照sourceAddressId，换地址、增加或移除地址选择409；成功重试不重新读取地址簿，修改/删除地址后仍返回原快照。
+
+新单在既有用户锁内查地址，复用saveOrder复制成交地址，与库存、活动名额、占券、优惠快照、Outbox同事务。新增有地址活动单可支付→发货→收货；旧无地址订单不自动补填，仍不可发货。新增11项先失败后通过，连同原券/结算/履约接口共73项通过。完整离线package505项通过，0失败/错误/跳过，本轮44个测试类XML交叉核对一致；独立只读复核无问题。开发十四表数据保持，测试十四表空且无触发器，Redis/MQ随机资源无残留，JAR含addressId且无本机凭据/配置/测试资源/工具。证据来自MockMvc及真实依赖，不代表真实HTTP部署或生产压测；未提交推送。
+
+## 用户注册阶段记录（2026-10-19）
+
+源码说明见 [第二十阶段](docs/learning/20-registration.md)。新增POST `/api/auth/register`，匿名可调用但仍需CSRF；请求JSON只有username/password。用户名3—50位ASCII字母、数字或下划线，原样保存；密码非空白、至少8个Java字符且UTF-8不超过72字节，原样用既有BCryptPasswordEncoder编码。密码在Service使用通用错误提示校验，不把原文带入字段校验异常。
+
+成功201，复用CurrentUserResponse只返回id/username/role；SQL固定USER，额外role/id/passwordHash不影响结果，不自动登录，随后使用原表单登录接口。用户名重复由已有唯一键裁决，精确DuplicateKeyException映射409，不先查后插或覆盖原账号；其他数据库错误传播。未新增表、迁移、依赖或自建认证机制。
+
+新增25项专项先失败后通过，含21项API及4项真实持久化/并发，与原认证13项共38项通过。已验证真实CSRF→注册→登录→下单→退出重登录读订单、权限隔离、8个同名并发1成功7冲突、摘要及独立盐、密码72字节边界、重复不覆盖、数据库非重名故障传播和恢复。完整离线package530项通过，0失败/错误/跳过，本轮46个测试类XML核对一致。一次独立只读复核无Critical/Important/Minor；开发十四表保持，测试十四表空且无触发器，Redis/MQ随机资源无残留，JAR含注册类和新Mapper且与本轮编译结果一致，无本机凭据/配置/测试资源/工具。验证来自MockMvc和真实依赖，不代表真实HTTP部署或生产压测。本机证据为tools/registration-*.log、registration-before/after.tsv和registration-progress.md，均被忽略；未提交推送。
+
+## 完整业务前端阶段记录（2026-10-19）
+
+启动已有应用后访问 http://localhost:8080/ 。静态源码在src/main/resources/static，包含用户注册登录退出、商品分类搜索分页/立即购买/加购物车、活动浏览领券购买、购物车数量/选择结算、地址管理、本人券、订单详情/支付取消收货，以及ADMIN分类/商品/活动/券维护和订单筛选发货。支付仍为模拟，物流仍为人工登记。没有外部前端服务、CDN或新增依赖。
+
+只补GET `/api/activities`和GET `/api/admin/products`两个必要读取入口，后者包含下架商品并保留ADMIN权限。页面GET资源公开，API权限/CSRF不放宽。新下单使用地址选择，旧订单快照不改；状态不允许的操作不展示按钮。
+
+每次写操作取当前CSRF，登录用表单编码，其他正文用JSON。动态业务文字通过文本节点渲染。未确认下单按用户在sessionStorage保存原请求意图，网络/5xx及已有未知结果遇到认证/限流拒绝时不生成新requestId；查到原单或原请求成功后清理。会话和页面版本防止延迟详情重新打开旧账号私有数据，等待CSRF时换会话会取消旧写入。
+
+最小验证：新增页面/读取/权限3项加现有注册购买、购物车结算、活动券履约各1项，共6项真实MySQL/MockMvc通过。Chromium契约夹具检查用户/管理全操作主线、未知结果重试、429、文字安全/空状态/移动布局及会话失效隔离；一次只读复核的2项重要问题均先RED复现再修复并关联通过。未进行全量回归或启动真实HTTP联调服务，不能把夹具浏览器操作当成实际部署验收。
+
+`-DskipTests package`已生成包含当前页面及修复的JAR，构建成功；开发十四表保持，测试十四表空且无触发器。详细说明见 [前端学习文档](docs/learning/21-web-ui.md)，设计/实施在docs/plans/2026-10-19-web-ui-*，本机验证日志与截图在忽略的tools/web-ui-*。未提交推送或安装新依赖。
+
+## 后续学习与工程化路线
+
+完整路线与验收边界见 [后续路线](docs/roadmap.md)。2026-10-19按用户要求，补入SSM/Redis及后端常用中间件和部署基本功中尚未完成的部分。
+
+| 方向 | 当前进度 |
+|---|---|
+| Spring / Spring MVC / MyBatis | 已覆盖核心应用能力，当前由Spring Boot集成 |
+| Redis | 已有商品缓存、提交后失效、Lua下单限流；共享Session待做 |
+| RabbitMQ消息队列 | 已有Outbox、发布确认、延时、重试、失败归档和扫描补偿 |
+| 日志 | 有框架基础输出；统一请求关联、日志规范和集中采集检索待做 |
+| 负载均衡与网关入口 | Nginx反向代理、多实例分发及共享Session待做；独立API网关按需评估 |
+| 容器管理 | Docker镜像、Compose编排、网络/卷/配置/健康检查及故障恢复待做 |
+| 前端 | 现有用户/管理员页面已实现，契约浏览器和最小后端联调通过；真实HTTP浏览器验收待做 |
+
+后续顺序：实际启动后的浏览器联调确认 → 应用日志基本功 → Docker/Compose → Nginx单实例入口 → 多实例负载均衡与Redis共享Session → 集中日志收集 → 综合故障演练。原先分步做页面的安排已按用户要求合并为当前完整前端阶段。
+
+按用户提供的“Java开发工程师”岗位截图，路线还补入：Java/JVM/并发基础、Spring与Boot原理、Spring Cloud专项、RabbitMQ/MySQL底层机制、MS SQL（SQL Server）与MongoDB、Python、PyTorch/TensorFlow、NLP加分项，以及代码质量、敏捷协作、沟通分析和团队推进实践。各项当前证据、后续内容及学习顺序见 [岗位要求对照](docs/roadmap.md#岗位截图补充要求与学习安排)。
+
+Spring Cloud明确列为后续专项，先在独立小实验中学习；是否引入当前交易系统另行设计。SQL Server/MongoDB不替换现有交易库，Python和深度学习安排为单独学习线；Kubernetes仍作为进阶方向。待做内容不作为已实现能力；具体工具、版本和安装在对应阶段单独确认。本次只更新路线文档，没有安装中间件、修改业务代码或重新运行测试。
+
+最新方向按用户要求扩展为AI全栈：新增网络爬虫与数据处理、LLM/NLP与RAG、AI Agent原理和最小工具调用循环、多模态内容理解、AIGC与图像/视频生成、计算机视觉与图像分割，以及前端—Java业务服务—Python模型服务的综合实践。AI应用线可与后端工程化并行，不必等全部中间件做完再开始；详见[AI全栈路线](docs/roadmap.md#ai全栈新增学习路线)。
+
+设计模式也纳入后续计划：先理解设计原则与23种经典模式分类，优先结合Java/Spring、订单状态、消息和模型调用学习策略、工厂、代理、适配器、装饰器、模板方法、责任链、观察者、状态、单例、建造者与外观。对照实际源码解释作用和取舍，不为使用模式而重构；详见[设计模式安排](docs/roadmap.md#设计模式学习与实践)。以上均为后续计划，本次未接入AI服务或安装相关依赖。
+
+后续按完整大功能交付，参考本次前端：一次完成所需接口、数据、页面与配置，做最小必要验证，然后统一报告结果与使用方式。实现期间不按单个类或内部小步骤反复等待确认；源码教学仍按类、方法或小步骤分段，每讲完一部分等待用户说“继续”再往下讲。关键业务决策、必要权限或凭据缺失时再询问。详见[执行边界](docs/roadmap.md#执行边界)。

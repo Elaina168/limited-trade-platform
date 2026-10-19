@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#233e9d">
+  <title>限量集市 · 商品与活动</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳到内容</a>
+  <header class="header">
+    <a class="brand" href="#products"><span class="brand-mark">集</span><span>限量集市<small>LIMITED MARKET</small></span></a>
+    <nav aria-label="主导航">
+      <a href="#products">发现商品</a><a href="#activities">限量活动</a>
+      <a href="#cart">购物车</a><a href="#addresses">收货地址</a>
+      <a href="#coupons">我的券</a><a href="#orders">我的订单</a>
+      <a href="#admin" id="admin-link" hidden>管理中心</a>
+    </nav>
+    <div id="account" class="account" aria-live="polite">正在读取登录状态…</div>
+  </header>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <main id="main" tabindex="-1"><p class="empty">正在加载…</p></main>
+  <footer>限量集市 <span>·</span> 明确的价格，安心的每一步。<small>当前支付为模拟支付，物流信息由管理员登记。</small></footer>
+  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
+</body>
+</html>

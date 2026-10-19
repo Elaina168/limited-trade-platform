@@ -8,7 +8,11 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface ProductMapper {
 
+    Product findByIdForUpdate(long id);
+
     List<Product> findOnSaleProducts();
+
+    List<Product> findAllProducts();
 
     Product findById(long id);
 

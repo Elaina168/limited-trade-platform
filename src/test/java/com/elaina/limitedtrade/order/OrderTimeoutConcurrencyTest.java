@@ -45,11 +45,12 @@ class OrderTimeoutConcurrencyTest {
         jdbcTemplate.update("INSERT INTO app_user (id,username,password_hash,role) VALUES (8951,'timeout_buyer','unused-test-hash','USER')");
         jdbcTemplate.update("INSERT INTO product (id,name,price,stock,status) VALUES (8951,'超时测试商品',20,3,'ON_SALE')");
         jdbcTemplate.update("""
-                INSERT INTO trade_order (id,user_id,product_id,product_name,unit_price,quantity,total_amount,
+                INSERT INTO trade_order (id,user_id,total_amount,
                                          status,request_id,created_at,expires_at)
-                VALUES (8951,8951,8951,'超时测试商品',20,2,40,'PENDING_PAYMENT','timeout-race',
+                VALUES (8951,8951,40,'PENDING_PAYMENT','timeout-race',
                         DATE_SUB(CURRENT_TIMESTAMP,INTERVAL 16 MINUTE),DATE_SUB(CURRENT_TIMESTAMP,INTERVAL 1 MINUTE))
                 """);
+        jdbcTemplate.update("INSERT INTO order_item(order_id,product_id,product_name,unit_price,quantity,line_amount) VALUES (8951,8951,'超时测试商品',20,2,40)");
     }
 
     @AfterEach

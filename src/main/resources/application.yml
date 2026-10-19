@@ -51,6 +51,11 @@ server:
   port: 8080
 
 app:
+  order-rate-limit:
+    enabled: true
+    max-requests: 5
+    window-seconds: 10
+    key-prefix: limited-trade:rate-limit:order
   scheduling:
     enabled: true
   order-message:

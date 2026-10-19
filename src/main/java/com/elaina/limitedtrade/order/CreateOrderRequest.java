@@ -13,5 +13,14 @@ public record CreateOrderRequest(
         @NotBlank(message = "请求标识不能为空")
         @Pattern(regexp = "[A-Za-z0-9_-]{1,64}", message = "请求标识须为1至64位字母、数字、下划线或连字符")
         String requestId,
-        @Positive(message = "活动编号必须大于0") Long activityId) {
+        @Positive(message = "活动编号必须大于0") Long activityId,
+        @Positive(message = "用户优惠券编号必须大于0") Long userCouponId,
+        @Positive(message = "地址编号必须大于0") Long addressId) {
+    public CreateOrderRequest(Long productId, Integer quantity, String requestId, Long activityId) {
+        this(productId, quantity, requestId, activityId, null, null);
+    }
+
+    public CreateOrderRequest(Long productId, Integer quantity, String requestId, Long activityId, Long userCouponId) {
+        this(productId, quantity, requestId, activityId, userCouponId, null);
+    }
 }

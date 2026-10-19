@@ -10,10 +10,19 @@
         ORDER BY id ASC
     </select>
 
+    <select id="findAllProducts" resultType="com.elaina.limitedtrade.product.Product">
+        SELECT id, name, price, stock, status, category_id FROM product ORDER BY id DESC
+    </select>
+
     <select id="findById" resultType="com.elaina.limitedtrade.product.Product">
         SELECT id, name, price, stock, status, category_id
         FROM product
         WHERE id = #{id}
+    </select>
+
+    <select id="findByIdForUpdate" resultType="com.elaina.limitedtrade.product.Product">
+        SELECT id, name, price, stock, status, category_id
+        FROM product WHERE id=#{id} FOR UPDATE
     </select>
 
     <insert id="insertProduct" useGeneratedKeys="true" keyProperty="id">

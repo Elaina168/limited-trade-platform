@@ -85,7 +85,7 @@ class ActivityOrderApiTest {
                                 {"productId":9401,"quantity":2,"requestId":"activity-order","activityId":9401}
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.activityId").value(9401))
+                .andExpect(jsonPath("$.items[0].activityId").value(9401))
                 .andExpect(jsonPath("$.totalAmount").value(40));
         assertEquals(8, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9401", Integer.class));
         assertEquals(3, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9401", Integer.class));
@@ -94,7 +94,7 @@ class ActivityOrderApiTest {
     @Test
     void ordinaryOrderDoesNotConsumeActivityQuota() throws Exception {
         placeOrder(2, null, "ordinary").andExpect(status().isCreated())
-                .andExpect(jsonPath("$.activityId").isEmpty());
+                .andExpect(jsonPath("$.items[0].activityId").isEmpty());
         assertEquals(5, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9401", Integer.class));
         assertEquals(8, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9401", Integer.class));
     }
@@ -223,11 +223,11 @@ class ActivityOrderApiTest {
     void activityIdSurvivesOwnerListDetailAndAdminQuery() throws Exception {
         long id = createActivityOrder();
         mockMvc.perform(get("/api/orders/" + id).with(buyer())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.activityId").value(9401));
+                .andExpect(jsonPath("$.items[0].activityId").value(9401));
         mockMvc.perform(get("/api/orders").with(buyer())).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].activityId").value(9401));
+                .andExpect(jsonPath("$[0].items[0].activityId").value(9401));
         mockMvc.perform(get("/api/admin/orders").with(user("admin").roles("ADMIN")))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].activityId").value(9401));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].items[0].activityId").value(9401));
     }
 
     @Test

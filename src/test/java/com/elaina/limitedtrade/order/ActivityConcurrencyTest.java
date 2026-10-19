@@ -62,8 +62,8 @@ class ActivityConcurrencyTest {
     @AfterEach
     void removeOwnedFixtures() {
         if (fixtureOwned) {
-            jdbcTemplate.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE product_id=9601)");
-            jdbcTemplate.update("DELETE FROM trade_order WHERE product_id=9601");
+            jdbcTemplate.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT order_id FROM order_item WHERE product_id=9601)");
+            jdbcTemplate.update("DELETE FROM trade_order WHERE id IN (SELECT order_id FROM order_item WHERE product_id=9601)");
             jdbcTemplate.update("DELETE FROM activity WHERE id=9601");
             jdbcTemplate.update("DELETE FROM product WHERE id=9601");
             jdbcTemplate.update("DELETE FROM app_user WHERE id BETWEEN 7601 AND 7620");
@@ -99,7 +99,7 @@ class ActivityConcurrencyTest {
         }
         int expected = initialStock == 20 ? 5 : 3;
         assertEquals(expected, successful);
-        assertEquals(expected, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trade_order WHERE activity_id=9601", Integer.class));
+        assertEquals(expected, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_item WHERE activity_id=9601", Integer.class));
         assertEquals(initialStock - expected, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9601", Integer.class));
         assertEquals(5 - expected, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9601", Integer.class));
     }
@@ -121,7 +121,7 @@ class ActivityConcurrencyTest {
             assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
         }
         assertEquals(1, created);
-        assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trade_order WHERE activity_id=9601", Integer.class));
+        assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_item WHERE activity_id=9601", Integer.class));
         assertEquals(19, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9601", Integer.class));
         assertEquals(4, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9601", Integer.class));
     }
@@ -234,6 +234,6 @@ class ActivityConcurrencyTest {
         }
         assertEquals(20, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9601", Integer.class));
         assertEquals(5, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9601", Integer.class));
-        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trade_order WHERE activity_id=9601", Integer.class));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_item WHERE activity_id=9601", Integer.class));
     }
 }

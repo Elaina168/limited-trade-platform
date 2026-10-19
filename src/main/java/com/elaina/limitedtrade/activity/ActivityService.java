@@ -1,6 +1,7 @@
 package com.elaina.limitedtrade.activity;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import com.elaina.limitedtrade.product.ProductMapper;
 import org.springframework.http.HttpStatus;
@@ -38,6 +39,10 @@ public class ActivityService {
         activity.setEndsAt(endsAt);
         activityMapper.insertActivity(activity);
         return activity;
+    }
+
+    public List<Activity> listActivities() {
+        return activityMapper.findAll();
     }
 
     public Activity getActivity(long id) {

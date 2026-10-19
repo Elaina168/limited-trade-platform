@@ -8,5 +8,7 @@ public interface AppUserMapper {
 
     AppUser findByUsername(@Param("username") String username);
 
+    void insertUser(@Param("username") String username, @Param("passwordHash") String passwordHash);
+
     Long lockById(long id);
 }

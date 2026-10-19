@@ -32,6 +32,10 @@ public class ProductService {
         return products;
     }
 
+    public List<Product> listAdminProducts() {
+        return productMapper.findAllProducts();
+    }
+
     @Transactional
     public Product createProduct(CreateProductRequest request) {
         if (request.categoryId() != null && categoryMapper.findById(request.categoryId()) == null) {

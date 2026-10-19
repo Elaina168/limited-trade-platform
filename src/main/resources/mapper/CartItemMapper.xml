@@ -17,4 +17,15 @@
     <delete id="deleteItem">
         DELETE FROM cart_item WHERE user_id=#{userId} AND product_id=#{productId}
     </delete>
+    <select id="findSelectedForUpdate" resultType="com.elaina.limitedtrade.cart.CartSelection">
+        SELECT product_id,quantity FROM cart_item
+        WHERE user_id=#{userId} AND product_id IN
+        <foreach collection="productIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        ORDER BY product_id FOR UPDATE
+    </select>
+
+    <delete id="deleteSelected">
+        DELETE FROM cart_item WHERE user_id=#{userId} AND product_id IN
+        <foreach collection="productIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+    </delete>
 </mapper>

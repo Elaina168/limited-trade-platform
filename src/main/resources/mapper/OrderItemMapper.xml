@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.order.OrderItemMapper">
+    <insert id="insertItems">
+        INSERT INTO order_item(order_id,product_id,product_name,unit_price,quantity,line_amount,activity_id)
+        VALUES
+        <foreach collection="items" item="item" separator=",">
+            (#{orderId},#{item.productId},#{item.productName},#{item.unitPrice},#{item.quantity},#{item.lineAmount},#{item.activityId})
+        </foreach>
+    </insert>
+    <select id="findByOrderIds" resultType="com.elaina.limitedtrade.order.OrderItem">
+        SELECT order_id,product_id,product_name,unit_price,quantity,line_amount,activity_id FROM order_item
+        WHERE order_id IN
+        <foreach collection="orderIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        ORDER BY order_id,product_id
+    </select>
+</mapper>

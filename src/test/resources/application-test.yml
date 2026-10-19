@@ -6,6 +6,9 @@ spring:
 
 # 测试手动调用扫描入口，避免后台任务干扰夹具和断言。
 app:
+  # 既有业务正确性测试不受额度影响，限流专项使用随机Redis前缀单独启用。
+  order-rate-limit:
+    enabled: false
   scheduling:
     enabled: false
   order-message:

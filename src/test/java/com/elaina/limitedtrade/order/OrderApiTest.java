@@ -52,9 +52,9 @@ class OrderApiTest {
                                  "userId":7102,"unitPrice":0.01,"totalAmount":0.02}
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.productName").value("订单测试键盘"))
-                .andExpect(jsonPath("$.unitPrice").value(129.00))
-                .andExpect(jsonPath("$.quantity").value(2))
+                .andExpect(jsonPath("$.items[0].productName").value("订单测试键盘"))
+                .andExpect(jsonPath("$.items[0].unitPrice").value(129.00))
+                .andExpect(jsonPath("$.items[0].quantity").value(2))
                 .andExpect(jsonPath("$.totalAmount").value(258.00))
                 .andExpect(jsonPath("$.status").value("PENDING_PAYMENT"))
                 .andExpect(jsonPath("$.expiresAt").isNotEmpty())
@@ -134,7 +134,7 @@ class OrderApiTest {
         jdbcTemplate.update("UPDATE product SET name = '已改名', price = 299 WHERE id = 9101");
         mockMvc.perform(get("/api/orders/" + orderId).with(buyer(7101)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.productName").value("订单测试键盘"))
+                .andExpect(jsonPath("$.items[0].productName").value("订单测试键盘"))
                 .andExpect(jsonPath("$.totalAmount").value(258.00));
         mockMvc.perform(get("/api/orders/" + orderId).with(buyer(7102)))
                 .andExpect(status().isNotFound());

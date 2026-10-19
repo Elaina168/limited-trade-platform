@@ -63,8 +63,8 @@ class OrderConcurrencyTest {
     @AfterEach
     void removeOwnedFixtures() {
         if (fixtureOwned) {
-            jdbcTemplate.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE product_id=8801)");
-            jdbcTemplate.update("DELETE FROM trade_order WHERE product_id = 8801");
+            jdbcTemplate.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT order_id FROM order_item WHERE product_id=8801)");
+            jdbcTemplate.update("DELETE FROM trade_order WHERE id IN (SELECT order_id FROM order_item WHERE product_id = 8801)");
             jdbcTemplate.update("DELETE FROM product WHERE id = 8801");
             jdbcTemplate.update("DELETE FROM app_user WHERE id BETWEEN 8801 AND 8820");
         }
@@ -100,7 +100,7 @@ class OrderConcurrencyTest {
         }
         assertEquals(5, successful);
         assertEquals(5, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trade_order", Integer.class));
-        assertEquals(5, jdbcTemplate.queryForObject("SELECT SUM(quantity) FROM trade_order", Integer.class));
+        assertEquals(5, jdbcTemplate.queryForObject("SELECT SUM(quantity) FROM order_item", Integer.class));
         assertEquals(0, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=8801", Integer.class));
     }
 

@@ -4,37 +4,35 @@
 <mapper namespace="com.elaina.limitedtrade.order.OrderMapper">
 
     <select id="findByUserAndRequest" resultType="com.elaina.limitedtrade.order.TradeOrder">
-        SELECT id, user_id, product_id, product_name, unit_price, quantity,
-               total_amount, status, request_id, created_at, expires_at, paid_at, ended_at, activity_id
+        SELECT id, user_id, order_type, total_amount, original_amount, discount_amount, status, request_id,
+               created_at, expires_at, paid_at, ended_at
         FROM trade_order
         WHERE user_id = #{userId} AND request_id = #{requestId}
     </select>
 
     <select id="findOwnedOrder" resultType="com.elaina.limitedtrade.order.TradeOrder">
-        SELECT id, user_id, product_id, product_name, unit_price, quantity,
-               total_amount, status, request_id, created_at, expires_at, paid_at, ended_at, activity_id
+        SELECT id, user_id, order_type, total_amount, original_amount, discount_amount, status, request_id,
+               created_at, expires_at, paid_at, ended_at
         FROM trade_order
         WHERE id = #{id} AND user_id = #{userId}
     </select>
 
     <select id="findUserOrders" resultType="com.elaina.limitedtrade.order.TradeOrder">
-        SELECT id, user_id, product_id, product_name, unit_price, quantity,
-               total_amount, status, request_id, created_at, expires_at, paid_at, ended_at, activity_id
+        SELECT id, user_id, order_type, total_amount, original_amount, discount_amount, status, request_id,
+               created_at, expires_at, paid_at, ended_at
         FROM trade_order
         WHERE user_id = #{userId}
         ORDER BY id DESC
     </select>
 
     <insert id="insertOrder" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO trade_order (user_id, product_id, product_name, unit_price, quantity,
-                                 total_amount, status, request_id, created_at, expires_at, activity_id)
-        VALUES (#{userId}, #{productId}, #{productName}, #{unitPrice}, #{quantity},
-                #{totalAmount}, #{status}, #{requestId}, #{createdAt}, #{expiresAt}, #{activityId})
+        INSERT INTO trade_order (user_id, order_type, total_amount, discount_amount, status, request_id, created_at, expires_at)
+        VALUES (#{userId}, #{orderType}, #{totalAmount}, #{discountAmount}, #{status}, #{requestId}, #{createdAt}, #{expiresAt})
     </insert>
 
     <select id="findOwnedOrderForUpdate" resultType="com.elaina.limitedtrade.order.TradeOrder">
-        SELECT id, user_id, product_id, product_name, unit_price, quantity,
-               total_amount, status, request_id, created_at, expires_at, paid_at, ended_at, activity_id
+        SELECT id, user_id, order_type, total_amount, original_amount, discount_amount, status, request_id,
+               created_at, expires_at, paid_at, ended_at
         FROM trade_order
         WHERE id = #{id} AND user_id = #{userId}
         FOR UPDATE
@@ -66,11 +64,26 @@
     </update>
 
     <select id="findById" resultType="com.elaina.limitedtrade.order.TradeOrder">
-        SELECT id, user_id, product_id, product_name, unit_price, quantity,
-               total_amount, status, request_id, created_at, expires_at, paid_at, ended_at, activity_id
+        SELECT id, user_id, order_type, total_amount, original_amount, discount_amount, status, request_id,
+               created_at, expires_at, paid_at, ended_at
         FROM trade_order
         WHERE id = #{id}
     </select>
+    <select id="findByIdForUpdate" resultType="com.elaina.limitedtrade.order.TradeOrder">
+        SELECT id,user_id,order_type,total_amount,original_amount,discount_amount,status,request_id,
+               created_at,expires_at,paid_at,ended_at
+        FROM trade_order WHERE id=#{id} FOR UPDATE
+    </select>
+
+    <update id="markShipped">
+        UPDATE trade_order SET status='SHIPPED' WHERE id=#{id} AND status='PAID'
+    </update>
+
+    <update id="markCompleted">
+        UPDATE trade_order SET status='COMPLETED'
+        WHERE id=#{id} AND user_id=#{userId} AND status='SHIPPED'
+    </update>
+
     <sql id="adminOrderFilters">
         <where>
             <if test="status != null">
@@ -88,8 +101,8 @@
     </select>
 
     <select id="findAdminOrders" resultType="com.elaina.limitedtrade.order.TradeOrder">
-        SELECT id, user_id, product_id, product_name, unit_price, quantity,
-               total_amount, status, request_id, created_at, expires_at, paid_at, ended_at, activity_id
+        SELECT id, user_id, order_type, total_amount, original_amount, discount_amount, status, request_id,
+               created_at, expires_at, paid_at, ended_at
         FROM trade_order
         <include refid="adminOrderFilters"/>
         ORDER BY id DESC

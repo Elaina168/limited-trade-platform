@@ -27,15 +27,18 @@ public class SecurityConfig {
                 .requestCache(cache -> cache.disable())
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/", "/index.html", "/assets/*.js", "/assets/styles.css").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/ping", "/api/products", "/api/products/search",
                                 "/api/categories", "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/activities/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()
                         .requestMatchers("/api/cart/items", "/api/cart/items/**").authenticated()
                         .requestMatchers("/api/addresses", "/api/addresses/**").authenticated()
+                        .requestMatchers("/api/coupons/**").authenticated()
                 .anyRequest().denyAll())
                 .formLogin(form -> form
                         .loginProcessingUrl("/api/auth/login")

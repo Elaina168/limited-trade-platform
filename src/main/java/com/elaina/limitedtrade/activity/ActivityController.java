@@ -1,5 +1,6 @@
 package com.elaina.limitedtrade.activity;
 
+import java.util.List;
 import jakarta.validation.constraints.Positive;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +15,11 @@ public class ActivityController {
 
     public ActivityController(ActivityService activityService) {
         this.activityService = activityService;
+    }
+
+    @GetMapping
+    public List<Activity> listActivities() {
+        return activityService.listActivities();
     }
 
     @GetMapping("/{id}")

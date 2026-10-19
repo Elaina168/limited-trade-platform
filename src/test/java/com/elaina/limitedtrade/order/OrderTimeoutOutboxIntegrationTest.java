@@ -47,8 +47,8 @@ class OrderTimeoutOutboxIntegrationTest {
     @AfterEach
     void removeOwnedFixtures() {
         if (fixtureOwned) {
-            jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE product_id=9801)");
-            jdbc.update("DELETE FROM trade_order WHERE product_id=9801");
+            jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT order_id FROM order_item WHERE product_id=9801)");
+            jdbc.update("DELETE FROM trade_order WHERE id IN (SELECT order_id FROM order_item WHERE product_id=9801)");
             jdbc.update("DELETE FROM activity WHERE id=9801");
             jdbc.update("DELETE FROM product WHERE id=9801");
             jdbc.update("DELETE FROM app_user WHERE id=7801");

@@ -51,11 +51,12 @@ class OrderActionConcurrencyTest {
                 INSERT INTO product (id,name,price,stock,status) VALUES (8901,'状态竞争商品',10,4,'ON_SALE')
                 """);
         jdbcTemplate.update("""
-                INSERT INTO trade_order (id,user_id,product_id,product_name,unit_price,quantity,total_amount,
+                INSERT INTO trade_order (id,user_id,total_amount,
                                          status,request_id,created_at,expires_at)
-                VALUES (8901,8901,8901,'状态竞争商品',10,1,10,'PENDING_PAYMENT','action-race',
+                VALUES (8901,8901,10,'PENDING_PAYMENT','action-race',
                         CURRENT_TIMESTAMP,DATE_ADD(CURRENT_TIMESTAMP,INTERVAL 15 MINUTE))
                 """);
+        jdbcTemplate.update("INSERT INTO order_item(order_id,product_id,product_name,unit_price,quantity,line_amount) VALUES (8901,8901,'状态竞争商品',10,1,10)");
     }
 
     @AfterEach

@@ -2,27 +2,36 @@ package com.elaina.limitedtrade.order;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class TradeOrder {
-
     private Long id;
     private Long userId;
-    private Long productId;
-    private Long activityId;
-    private String productName;
-    private BigDecimal unitPrice;
-    private Integer quantity;
+    private String orderType;
     private BigDecimal totalAmount;
+    private BigDecimal originalAmount;
+    private BigDecimal discountAmount;
+    private OrderCoupon coupon;
     private String status;
     private String requestId;
     private LocalDateTime createdAt;
     private LocalDateTime expiresAt;
     private LocalDateTime paidAt;
     private LocalDateTime endedAt;
+    private List<OrderItem> items;
+    private OrderAddress address;
+    private OrderShipment shipment;
 
     public Long getId() {
         return id;
     }
+
+    public BigDecimal getOriginalAmount() { return originalAmount; }
+    public void setOriginalAmount(BigDecimal originalAmount) { this.originalAmount = originalAmount; }
+    public BigDecimal getDiscountAmount() { return discountAmount; }
+    public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+    public OrderCoupon getCoupon() { return coupon; }
+    public void setCoupon(OrderCoupon coupon) { this.coupon = coupon; }
 
     public void setId(Long id) {
         this.id = id;
@@ -36,44 +45,12 @@ public class TradeOrder {
         this.userId = userId;
     }
 
-    public Long getProductId() {
-        return productId;
+    public String getOrderType() {
+        return orderType;
     }
 
-    public void setProductId(Long productId) {
-        this.productId = productId;
-    }
-
-    public String getProductName() {
-        return productName;
-    }
-
-    public Long getActivityId() {
-        return activityId;
-    }
-
-    public void setActivityId(Long activityId) {
-        this.activityId = activityId;
-    }
-
-    public void setProductName(String productName) {
-        this.productName = productName;
-    }
-
-    public BigDecimal getUnitPrice() {
-        return unitPrice;
-    }
-
-    public void setUnitPrice(BigDecimal unitPrice) {
-        this.unitPrice = unitPrice;
-    }
-
-    public Integer getQuantity() {
-        return quantity;
-    }
-
-    public void setQuantity(Integer quantity) {
-        this.quantity = quantity;
+    public void setOrderType(String orderType) {
+        this.orderType = orderType;
     }
 
     public BigDecimal getTotalAmount() {
@@ -130,5 +107,29 @@ public class TradeOrder {
 
     public void setEndedAt(LocalDateTime endedAt) {
         this.endedAt = endedAt;
+    }
+
+    public List<OrderItem> getItems() {
+        return items;
+    }
+
+    public void setItems(List<OrderItem> items) {
+        this.items = items;
+    }
+
+    public OrderAddress getAddress() {
+        return address;
+    }
+
+    public void setAddress(OrderAddress address) {
+        this.address = address;
+    }
+
+    public OrderShipment getShipment() {
+        return shipment;
+    }
+
+    public void setShipment(OrderShipment shipment) {
+        this.shipment = shipment;
     }
 }

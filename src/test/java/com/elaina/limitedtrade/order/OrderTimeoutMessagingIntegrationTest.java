@@ -102,8 +102,8 @@ class OrderTimeoutMessagingIntegrationTest {
     void cleanup() {
         reset(cache);
         if (owned) {
-            jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE product_id=9803)");
-            jdbc.update("DELETE FROM trade_order WHERE product_id=9803");
+            jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT order_id FROM order_item WHERE product_id=9803)");
+            jdbc.update("DELETE FROM trade_order WHERE id IN (SELECT order_id FROM order_item WHERE product_id=9803)");
             jdbc.update("DELETE FROM activity WHERE id=9803");
             jdbc.update("DELETE FROM product WHERE id=9803");
             jdbc.update("DELETE FROM app_user WHERE id=7803");
@@ -136,6 +136,35 @@ class OrderTimeoutMessagingIntegrationTest {
     }
 
     @Test
+    void ttlMessageClosesCheckoutAndRestoresEveryItemOnlyOnce() {
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM product WHERE id=11031", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM user_address WHERE id=12031", Integer.class));
+        jdbc.update("INSERT INTO product(id,name,price,stock,status) VALUES (11031,'消息结算鼠标',7.50,4,'ON_SALE')");
+        try {
+            jdbc.update("INSERT INTO user_address(id,user_id,recipient_name,phone,province,city,district,detail_address) VALUES (12031,7803,'张三','13800138000','浙江','杭州','西湖','学院路1号')");
+            jdbc.update("INSERT INTO cart_item(user_id,product_id,quantity) VALUES (7803,9803,2),(7803,11031,3)");
+            long id = orders.checkout(7803, new CheckoutRequest(java.util.List.of(11031L,9803L),12031L,"mq-checkout")).order().getId();
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM order_timeout_outbox WHERE order_id=?", Integer.class,id));
+            assertEquals(8, jdbc.queryForObject("SELECT stock FROM product WHERE id=9803", Integer.class));
+            assertEquals(1, jdbc.queryForObject("SELECT stock FROM product WHERE id=11031", Integer.class));
+            expire(id);
+            relay.publishPending();
+            assertEquals("SENT", eventStatus(event(id)));
+            awaitStatus(id,"CLOSED");
+            sender.send(message(id));
+            awaitDrained();
+            assertStock(10,5);
+            assertEquals(4, jdbc.queryForObject("SELECT stock FROM product WHERE id=11031", Integer.class));
+        } finally {
+            jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE user_id=7803)");
+            jdbc.update("DELETE FROM trade_order WHERE user_id=7803");
+            jdbc.update("DELETE FROM cart_item WHERE user_id=7803");
+            jdbc.update("DELETE FROM user_address WHERE id=12031");
+            jdbc.update("DELETE FROM product WHERE id=11031");
+        }
+    }
+
+    @Test
     void earlyMessageDoesNotExtendOrOverrideDatabaseDeadline() {
         long id = create(false);
         assertTrue(publisher.publishOne(event(id)));
@@ -150,22 +179,28 @@ class OrderTimeoutMessagingIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"PAID", "CANCELED", "CLOSED"})
+    @ValueSource(strings = {"PAID", "CANCELED", "CLOSED", "SHIPPED", "COMPLETED"})
     void terminalOrderIsUnchangedWhenMessageArrives(String terminal) {
         long id = create(true);
         if (terminal.equals("PAID")) {
             orders.payOrder(7803, id);
         } else if (terminal.equals("CANCELED")) {
             orders.cancelOrder(7803, id);
-        } else {
+        } else if (terminal.equals("CLOSED")) {
             expire(id);
             scanner.closeExpiredOrders();
+        } else {
+            orders.payOrder(7803, id);
+            jdbc.update("INSERT INTO order_address(order_id,source_address_id,recipient_name,phone,province,city,district,detail_address) VALUES (?,1,'张三','13800138000','浙江','杭州','西湖','学院路1号')",id);
+            orders.shipOrder(id, new ShipOrderRequest("消息测试承运方","MQ-SHIP"));
+            if (terminal.equals("COMPLETED")) orders.receiveOrder(7803,id);
         }
         expire(id);
         assertTrue(publisher.publishOne(event(id)));
         awaitDrained();
         assertEquals(terminal, status(id));
-        assertStock(terminal.equals("PAID") ? 9 : 10, terminal.equals("PAID") ? 4 : 5);
+        boolean purchased = java.util.Set.of("PAID","SHIPPED","COMPLETED").contains(terminal);
+        assertStock(purchased ? 9 : 10, purchased ? 4 : 5);
     }
 
     @Test

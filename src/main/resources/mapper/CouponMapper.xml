@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.coupon.CouponMapper">
+    <insert id="insertCoupon" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO activity_coupon (activity_id,name,threshold_amount,discount_amount,total_quantity,remaining_quantity,
+            claim_starts_at,claim_ends_at,use_starts_at,use_ends_at)
+        VALUES (#{activityId},#{name},#{thresholdAmount},#{discountAmount},#{totalQuantity},#{remainingQuantity},
+            #{claimStartsAt},#{claimEndsAt},#{useStartsAt},#{useEndsAt})
+    </insert>
+    <select id="findCouponById" resultType="com.elaina.limitedtrade.coupon.ActivityCoupon">
+        SELECT * FROM activity_coupon WHERE id=#{id}
+    </select>
+    <select id="findCouponForUpdate" resultType="com.elaina.limitedtrade.coupon.ActivityCoupon">
+        SELECT * FROM activity_coupon WHERE id=#{id} FOR UPDATE
+    </select>
+    <select id="findByActivity" resultType="com.elaina.limitedtrade.coupon.ActivityCoupon">
+        SELECT * FROM activity_coupon WHERE activity_id=#{activityId} ORDER BY id
+    </select>
+    <select id="findClaimedTemplates" resultType="com.elaina.limitedtrade.coupon.ActivityCoupon">
+        SELECT * FROM activity_coupon WHERE id IN (SELECT coupon_id FROM user_coupon WHERE user_id=#{userId})
+    </select>
+    <select id="findByCouponAndUser" resultType="com.elaina.limitedtrade.coupon.UserCoupon">
+        SELECT * FROM user_coupon WHERE coupon_id=#{couponId} AND user_id=#{userId}
+    </select>
+    <select id="findByUser" resultType="com.elaina.limitedtrade.coupon.UserCoupon">
+        SELECT * FROM user_coupon WHERE user_id=#{userId} ORDER BY id DESC
+    </select>
+    <update id="deductClaim">
+        UPDATE activity_coupon SET remaining_quantity=remaining_quantity-1
+        WHERE id=#{id} AND remaining_quantity>0 AND claim_starts_at &lt;= #{now} AND claim_ends_at > #{now}
+    </update>
+    <insert id="insertUserCoupon" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_coupon(coupon_id,user_id,status,claimed_at) VALUES(#{couponId},#{userId},#{status},#{claimedAt})
+    </insert>
+    <select id="findOwnedForUpdate" resultType="com.elaina.limitedtrade.coupon.UserCoupon">
+        SELECT * FROM user_coupon WHERE id=#{id} AND user_id=#{userId} FOR UPDATE
+    </select>
+    <update id="reserve">
+        UPDATE user_coupon SET status='RESERVED',order_id=#{orderId} WHERE id=#{id}
+    </update>
+    <update id="useForOrder">
+        UPDATE user_coupon SET status='USED' WHERE order_id=#{orderId} AND status='RESERVED'
+    </update>
+    <update id="releaseForOrder">
+        UPDATE user_coupon SET status='AVAILABLE',order_id=NULL WHERE order_id=#{orderId} AND status='RESERVED'
+    </update>
+    <insert id="insertSnapshot">
+        INSERT INTO order_coupon(order_id,user_coupon_id,coupon_id,activity_id,name,threshold_amount,discount_amount,use_starts_at,use_ends_at)
+        VALUES(#{orderId},#{coupon.userCouponId},#{coupon.couponId},#{coupon.activityId},#{coupon.name},
+            #{coupon.thresholdAmount},#{coupon.discountAmount},#{coupon.useStartsAt},#{coupon.useEndsAt})
+    </insert>
+    <select id="findByOrderIds" resultType="com.elaina.limitedtrade.order.OrderCoupon">
+        SELECT order_id,user_coupon_id,coupon_id,activity_id,name,threshold_amount,discount_amount,use_starts_at,use_ends_at
+        FROM order_coupon WHERE order_id IN
+        <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+</mapper>

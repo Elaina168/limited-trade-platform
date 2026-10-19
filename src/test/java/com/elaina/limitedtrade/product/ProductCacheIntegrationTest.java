@@ -78,8 +78,8 @@ class ProductCacheIntegrationTest {
     void removeOwnedFixtures() {
         redis.delete(CACHE_KEY);
         if (fixtureOwned) {
-            jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE product_id IN (9701,9702))");
-            jdbc.update("DELETE FROM trade_order WHERE product_id IN (9701,9702)");
+            jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT order_id FROM order_item WHERE product_id IN (9701,9702))");
+            jdbc.update("DELETE FROM trade_order WHERE id IN (SELECT order_id FROM order_item WHERE product_id IN (9701,9702))");
             jdbc.update("DELETE FROM activity WHERE id=9701");
             jdbc.update("DELETE FROM product WHERE id IN (9701,9702)");
             jdbc.update("DELETE FROM app_user WHERE id=7701");

@@ -9,6 +9,11 @@
         WHERE username = #{username}
     </select>
 
+    <insert id="insertUser">
+        INSERT INTO app_user(username, password_hash, role)
+        VALUES (#{username}, #{passwordHash}, 'USER')
+    </insert>
+
     <select id="lockById" resultType="java.lang.Long">
         SELECT id FROM app_user WHERE id = #{id} FOR UPDATE
     </select>

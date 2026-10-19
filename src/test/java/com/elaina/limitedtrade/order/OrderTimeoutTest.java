@@ -92,11 +92,12 @@ class OrderTimeoutTest {
         jdbcTemplate.update("UPDATE product SET stock=0 WHERE id=9201");
         for (int index = 0; index < 100; index++) {
             jdbcTemplate.update("""
-                    INSERT INTO trade_order (user_id,product_id,product_name,unit_price,quantity,total_amount,
+                    INSERT INTO trade_order (user_id,total_amount,
                                              status,request_id,created_at,expires_at)
-                    VALUES (7201,9201,'批量关闭商品',20,1,20,'PENDING_PAYMENT',?,
+                    VALUES (7201,20,'PENDING_PAYMENT',?,
                             DATE_SUB(CURRENT_TIMESTAMP,INTERVAL 16 MINUTE),DATE_SUB(CURRENT_TIMESTAMP,INTERVAL 1 MINUTE))
                     """, "timeout-batch-" + index);
+            jdbcTemplate.update("INSERT INTO order_item(order_id,product_id,product_name,unit_price,quantity,line_amount) SELECT id,9201,'批量关闭商品',20,1,20 FROM trade_order WHERE user_id=7201 AND request_id=?", "timeout-batch-"+index);
         }
         scheduler.closeExpiredOrders();
         assertEquals(100, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trade_order WHERE status='CLOSED'", Integer.class));
