@@ -1,0 +1,117 @@
+name: limited-trade-containers
+
+x-logging: &container-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    image: limited-trade-platform:local
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      APP_INSTANCE_ID: container-app
+      JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Shanghai -XX:MaxRAMPercentage=75.0"
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - type: bind
+        source: ./config/container/db.properties
+        target: /app/config/db.properties
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/container/rabbitmq.properties
+        target: /app/config/rabbitmq.properties
+        read_only: true
+        bind:
+          create_host_path: false
+      - app_logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    logging: *container-logging
+
+  mysql:
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?先运行scripts/prepare-containers.ps1}
+      MYSQL_DATABASE: limited_trade_platform
+      MYSQL_USER: limited_trade
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?先运行scripts/prepare-containers.ps1}
+      TZ: Asia/Shanghai
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - type: bind
+        source: ./docker/mysql/01-schema.sh
+        target: /docker-entrypoint-initdb.d/01-schema.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./sql
+        target: /bootstrap
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --host=127.0.0.1 --user=limited_trade --database=limited_trade_platform --batch --skip-column-names --execute='SELECT COUNT(*) FROM activity_coupon'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    logging: *container-logging
+
+  redis:
+    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    logging: *container-logging
+
+  rabbitmq:
+    image: rabbitmq:4.3.6-management@sha256:54cb013d76cd1fd6c0a0708f34062ad61c452bb6f016b434c6c33f1a765d2b58
+    hostname: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: limited_trade
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?先运行scripts/prepare-containers.ps1}
+      RABBITMQ_DEFAULT_VHOST: limited-trade
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:15673:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *container-logging
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+  app_logs:

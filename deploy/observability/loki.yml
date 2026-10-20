@@ -1,0 +1,42 @@
+# 本机学习使用单节点文件存储，路径由启停脚本传入。
+auth_enabled: false
+server:
+  http_listen_address: 127.0.0.1
+  http_listen_port: 3100
+  grpc_listen_address: 127.0.0.1
+  grpc_listen_port: 9096
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: ${OBS_ROOT}/loki
+  storage:
+    filesystem:
+      chunks_directory: ${OBS_ROOT}/loki/chunks
+      rules_directory: ${OBS_ROOT}/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+ingester:
+  wal:
+    dir: ${OBS_ROOT}/loki/wal
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+storage_config:
+  tsdb_shipper:
+    active_index_directory: ${OBS_ROOT}/loki/index
+    cache_location: ${OBS_ROOT}/loki/index-cache
+compactor:
+  working_directory: ${OBS_ROOT}/loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+limits_config:
+  retention_period: 168h
+analytics:
+  reporting_enabled: false

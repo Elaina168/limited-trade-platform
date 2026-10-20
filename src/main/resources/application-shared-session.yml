@@ -1,0 +1,5 @@
+spring:
+  session:
+    redis:
+      # 两个实例须使用相同命名空间；不与商品缓存或下单限流键混用。
+      namespace: limited-trade:session:v1

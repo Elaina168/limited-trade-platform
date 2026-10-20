@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(status, retryAfter, path) { super(`HTTP ${status}`); this.status = status; this.retryAfter = retryAfter; this.path = path; }
+  constructor(status, retryAfter, path, traceId) { super(`HTTP ${status}`); this.status = status; this.retryAfter = retryAfter; this.path = path; this.traceId = traceId; }
 }
 export class UserError extends Error {}
 class ConnectionError extends Error {}
@@ -18,7 +18,7 @@ export async function api(path, options = {}) {
   }
   if (!response.ok) {
     if (response.status === 401 && generation === sessionGeneration && path !== '/api/auth/me' && path !== '/api/auth/login') expired();
-    throw new ApiError(response.status, response.headers.get('Retry-After'), path);
+    throw new ApiError(response.status, response.headers.get('Retry-After'), path, response.headers.get('X-Trace-Id'));
   }
   if (path === '/api/auth/login' || path === '/api/auth/logout') advanceSession();
   if (response.status === 204) return null;
@@ -55,7 +55,8 @@ export function errorMessage(error) {
     429: `操作较频繁，请${error.retryAfter ? `等待 ${error.retryAfter} 秒后` : '稍后'}重试。`,
     503: '服务暂不可用，请稍后重试。'
   };
-  return messages[error.status] || `请求未完成（HTTP ${error.status}），请稍后重试。`;
+  const message = messages[error.status] || `请求未完成（HTTP ${error.status}），请稍后重试。`;
+  return error.traceId ? `${message}追踪编号：${error.traceId}` : message;
 }
 
 const intentKey = userId => `limited-market:order-intent:${userId}`;

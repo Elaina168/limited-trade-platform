@@ -1,0 +1,71 @@
+logging {
+  level = "info"
+  format = "json"
+}
+
+// 仅读取Java活动日志和Nginx JSON访问日志，不读取原生错误日志或配置文件。
+loki.source.file "java" {
+  targets = [{
+    __path__ = sys.env("PROJECT_ROOT") + "/logs/*.log",
+    app = "limited-trade",
+    source = "java",
+  }]
+  file_match {
+    enabled = true
+    sync_period = "2s"
+  }
+  forward_to = [loki.process.java.receiver]
+}
+
+loki.process "java" {
+  stage.json {
+    expressions = { instance = "instance", timestamp = "\"@timestamp\"" }
+  }
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339Nano"
+    action_on_failure = "skip"
+  }
+  stage.labels {
+    values = { instance = "" }
+  }
+  stage.label_drop {
+    values = ["filename"]
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.source.file "nginx" {
+  targets = [
+    { __path__ = sys.env("PROJECT_ROOT") + "/deploy/nginx/logs/access.log", app = "limited-trade", source = "nginx", instance = "single" },
+    { __path__ = sys.env("PROJECT_ROOT") + "/deploy/nginx-cluster/logs/access.log", app = "limited-trade", source = "nginx", instance = "cluster" },
+    { __path__ = sys.env("PROJECT_ROOT") + "/deploy/nginx-trade-drill/logs/access.log", app = "limited-trade", source = "nginx", instance = "trade-drill" },
+  ]
+  file_match {
+    enabled = true
+    sync_period = "2s"
+  }
+  forward_to = [loki.process.nginx.receiver]
+}
+
+loki.process "nginx" {
+  stage.json {
+    expressions = { timestamp = "timestamp" }
+  }
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339"
+    action_on_failure = "skip"
+  }
+  stage.label_drop {
+    values = ["filename"]
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+// traceId保留在JSON正文中，用LogQL查询，不创建每个请求独有的索引标签。
+loki.write "local" {
+  endpoint {
+    url = "http://127.0.0.1:3100/loki/api/v1/push"
+  }
+}

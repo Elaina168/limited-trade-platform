@@ -1,0 +1,90 @@
+{
+  "uid": "limited-trade-logs",
+  "title": "交易平台集中日志",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "limited-trade",
+    "logs"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "source",
+        "label": "日志来源",
+        "type": "custom",
+        "query": "java,nginx",
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "instance",
+        "label": "实例",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "limited-trade-loki"
+        },
+        "query": "label_values({app=\"limited-trade\"}, instance)",
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "traceId",
+        "label": "追踪编号（可留空）",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "请求与业务日志",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "range",
+          "expr": "{app=\"limited-trade\", source=~\"$source\", instance=~\"$instance\"} |= \"$traceId\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "checkedAt": "2026-10-20",
+  "platform": "windows/amd64",
+  "tools": [
+    {
+      "name": "alloy",
+      "version": "1.21.0",
+      "url": "https://github.com/grafana/alloy/releases/download/v1.21.0/alloy-windows-amd64.exe.zip",
+      "sha256": "a73e7da0dc0f1acf24368d9df3d1d4b01f4f7ef4ac95f56518380747850466c2",
+      "checksumSource": "https://github.com/grafana/alloy/releases/tag/v1.21.0",
+      "executable": "tools/alloy-1.21.0/alloy-windows-amd64.exe"
+    },
+    {
+      "name": "loki",
+      "version": "3.7.8",
+      "url": "https://github.com/grafana/loki/releases/download/v3.7.8/loki-windows-amd64.exe.zip",
+      "sha256": "622efc553df799ebb022c2e6c4b45792f726c54b008cb65126b99ae67be3a827",
+      "checksumSource": "https://github.com/grafana/loki/releases/tag/v3.7.8",
+      "executable": "tools/loki-3.7.8/loki-windows-amd64.exe"
+    },
+    {
+      "name": "grafana",
+      "version": "13.2.4",
+      "url": "https://dl.grafana.com/oss/release/grafana-13.2.4.windows-amd64.zip",
+      "sha256": "0eaddf3dbafa636e9da92e15fe29062958061dc30a73aa1761a7a36d7d019823",
+      "checksumSource": "https://dl.grafana.com/oss/release/grafana-13.2.4.windows-amd64.zip.sha256",
+      "executable": "tools/grafana-13.2.4/grafana-13.2.4/bin/grafana.exe"
+    }
+  ]
+}

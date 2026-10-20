@@ -20,7 +20,7 @@ async function fixture(browser,role=null){
     if(!p.startsWith('/api/')){const f=path.join(root,p==='/'?'index.html':p);return fs.existsSync(f)?route.fulfill({path:f,contentType:p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':'text/html'}):route.fulfill({status:404,body:'尚未实现'});}
     const d=req.postData()?(req.headers()['content-type']?.includes('application/json')?req.postDataJSON():Object.fromEntries(new URLSearchParams(req.postData()))):null;
     s.requests.push({p,m,d,query:url.searchParams.toString()});
-    if(m!=='GET'){assert.equal(req.headers()['x-csrf-token'],`token-${s.token}`);if(s.failure){const f=s.failure;s.failure=null;return f==='network'?route.abort('failed'):json({},f,f===429?{'Retry-After':'3'}:{});}}
+    if(m!=='GET'){assert.equal(req.headers()['x-csrf-token'],`token-${s.token}`);if(s.failure){const f=s.failure;s.failure=null;return f==='network'?route.abort('failed'):json({},f,{...(f===429?{'Retry-After':'3'}:{}),...(s.failureTrace?{'X-Trace-Id':s.failureTrace}:{})});}}
     if(p==='/api/auth/csrf'){const value={headerName:'X-CSRF-TOKEN',token:`token-${s.token}`};if(s.holdCsrf)return new Promise(resolve=>{s.releaseCsrf=()=>resolve(json(value));});return json(value);}
     if(p==='/api/auth/me')return s.user?json(s.user):json({},401);
     if(p==='/api/auth/register')return json({id:1,username:d.username,role:'USER'},201);
@@ -69,6 +69,16 @@ async function close(page){await page.locator('dialog').getByRole('button',{name
   const browser = await chromium.launch({ headless: true });
   const only=process.env.WEB_UI_CASE;
   try {
+    if(!only||only==='trace'){
+      const{page,context,s}=await fixture(browser,'USER');
+      await page.getByRole('button',{name:'立即购买',exact:true}).click();
+      s.failure=503;s.failureTrace='0123456789abcdef0123456789abcdef';
+      await submit(page,'提交订单');
+      await page.locator('dialog').getByText('服务暂不可用，请稍后重试。追踪编号：0123456789abcdef0123456789abcdef',{exact:true}).waitFor();
+      const legacy=await page.evaluate(async()=>{const{errorMessage,ApiError}=await import('/assets/api.js');return errorMessage(new ApiError(503,null,'/api/orders'));});
+      assert.equal(legacy,'服务暂不可用，请稍后重试。');
+      assert.deepEqual(s.errors,[]);await context.close();console.log('PASS 接口失败展示追踪编号及无编号兼容');
+    }
     if(!only||only==='notice'){
       const{page,context,s}=await fixture(browser);
       await page.clock.install();
@@ -148,6 +158,6 @@ async function close(page){await page.locator('dialog').getByRole('button',{name
       assert.equal(s.requests.filter(r=>r.p==='/api/orders'&&r.m==='POST').length,writes);
       assert.deepEqual(s.errors,[]);await context.close();console.log('PASS 会话失效后的延迟详情与写入隔离');
     }
-    console.log(only?`关联场景 ${only} 通过；未运行全量后端回归。`:'6个前端主线场景通过；未运行全量后端回归。');
+    console.log(only?`关联场景 ${only} 通过；未运行全量后端回归。`:'7个前端主线场景通过；未运行全量后端回归。');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

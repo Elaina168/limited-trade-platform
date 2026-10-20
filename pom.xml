@@ -33,6 +33,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
+        <!-- 共享会话仅在shared-session配置启用，版本沿用Spring Boot管理。 -->
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-data-redis</artifactId>
+        </dependency>
         <!-- 提供密码认证、Session 与角色授权 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

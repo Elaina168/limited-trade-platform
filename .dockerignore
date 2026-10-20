@@ -1,0 +1,9 @@
+# 白名单构建上下文：凭据、源码、工具、SQL和日志不发送给应用镜像构建器。
+**
+!Dockerfile
+!target/
+target/*
+!target/limited-trade-platform-0.0.1-SNAPSHOT.jar
+!docker/
+docker/*
+!docker/app-healthcheck.sh

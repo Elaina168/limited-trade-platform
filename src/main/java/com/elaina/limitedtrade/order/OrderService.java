@@ -22,14 +22,20 @@ import com.elaina.limitedtrade.product.ProductMapper;
 import com.elaina.limitedtrade.order.message.OrderTimeoutOutbox;
 import com.elaina.limitedtrade.order.message.OrderTimeoutOutboxMapper;
 import com.elaina.limitedtrade.user.AppUserMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class OrderService {
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private final AppUserMapper appUserMapper;
     private final ProductMapper productMapper;
     private final OrderMapper orderMapper;
@@ -216,6 +222,7 @@ public class OrderService {
         outboxMapper.insertEvent(event);
         productCache.evictAfterCommit();
         loadDetails(List.of(order));
+        logAfterCommit("order_created", order.getId());
         return order;
     }
 
@@ -247,6 +254,7 @@ public class OrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "订单已过支付截止时间或状态不允许支付");
         }
         couponMapper.useForOrder(id);
+        logAfterCommit("order_paid", id);
         return getUserOrder(userId, id);
     }
 
@@ -261,6 +269,7 @@ public class OrderService {
         }
         restoreItems(order.getItems());
         couponMapper.releaseForOrder(id);
+        logAfterCommit("order_canceled", id);
         return getUserOrder(userId, id);
     }
 
@@ -272,6 +281,7 @@ public class OrderService {
         }
         restoreItems(itemMapper.findByOrderIds(List.of(id)));
         couponMapper.releaseForOrder(id);
+        logAfterCommit("order_closed", id);
         return true;
     }
 
@@ -337,6 +347,7 @@ public class OrderService {
         // 主状态与发货记录同事务；任何插入失败都会恢复PAID状态。
         shipmentMapper.insertShipment(new OrderShipment(id, carrier, trackingNo,
                 LocalDateTime.now().withNano(0), null));
+        logAfterCommit("order_shipped", id);
         return getAdminOrder(id);
     }
 
@@ -353,7 +364,19 @@ public class OrderService {
         orderMapper.markCompleted(id, userId);
         // 已取得本人订单行锁，主状态和收货时间一起提交；重试不会覆盖原时间。
         shipmentMapper.markReceived(id, now);
+        logAfterCommit("order_completed", id);
         return getUserOrder(userId, id);
+    }
+
+    private void logAfterCommit(String event, long orderId) {
+        // 只在真实状态转换的事务提交后记录，不记录重试或回滚为成功。
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            // 先于缓存失效等提交后操作，避免它们失败时丢掉已经成交的记录。
+            @Override public int getOrder() { return Ordered.HIGHEST_PRECEDENCE; }
+            @Override public void afterCommit() {
+                log.atInfo().addKeyValue("event", event).addKeyValue("orderId", orderId).log("订单状态已提交");
+            }
+        });
     }
 
     private TradeOrder lockUserOrder(long userId, long id) {
