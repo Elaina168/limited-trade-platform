@@ -128,8 +128,8 @@ class CheckoutApiTest {
                 .andExpect(jsonPath("$.items[0].unitPrice").value(20))
                 .andExpect(jsonPath("$.address.recipientName").value("张三"));
         mvc.perform(get("/api/orders/"+id).with(buyer(8002))).andExpect(status().isNotFound());
-        mvc.perform(get("/api/orders").with(buyer(8002))).andExpect(content().json("[]"));
-        mvc.perform(get("/api/orders").with(buyer(8001))).andExpect(jsonPath("$[0].items.length()").value(2));
+        mvc.perform(get("/api/orders").with(buyer(8002))).andExpect(jsonPath("$.items.length()").value(0));
+        mvc.perform(get("/api/orders").with(buyer(8001))).andExpect(jsonPath("$.items[0].items.length()").value(2));
         mvc.perform(get("/api/admin/orders").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].items.length()").value(2))
                 .andExpect(jsonPath("$.items[0].address").doesNotExist());

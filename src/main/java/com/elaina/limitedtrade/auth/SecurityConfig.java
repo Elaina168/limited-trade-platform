@@ -28,6 +28,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/assets/*.js", "/assets/styles.css").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api-docs.html", "/swagger-ui.html",
+                                "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/ping", "/api/products", "/api/products/search",
                                 "/api/categories", "/api/auth/csrf").permitAll()

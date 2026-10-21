@@ -229,11 +229,20 @@ export async function showOrder(order, admin = false) {
   content.append(actions); modal(`订单 #${order.id}`, content);
 }
 async function ordersPage() {
-  const orders = await api('/api/orders'); const pending = pendingOrder(state.user.id);
+  const query = new URLSearchParams(location.hash.split('?')[1] || '');
+  const page = Number(query.get('page') || 1);
+  const params = new URLSearchParams({ page: String(page), size: '20' });
+  if (query.get('status')) params.set('status', query.get('status'));
+  const result = await api(`/api/orders?${params}`);
+  const orders = result.items; const pending = pendingOrder(state.user.id);
   if (pending && orders.some(order => order.requestId === pending.requestId)) clearPendingOrder(state.user.id);
-  return el('section', {}, heading('我的订单', '支付、取消和收货均以服务器最新状态为准。', button('刷新订单', navigate)), pendingBanner(), orders.length ? el('div', { class: 'stack' }, orders.map(order => el('article', { class: 'card' },
+  const status = field('status', '订单状态', { choices: ['PENDING_PAYMENT', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELED', 'CLOSED'].map(key => [key, statusNames[key]]), placeholder: '全部状态', value: query.get('status') || '' });
+  const form = el('form', { class: 'toolbar' }, status.node, el('button', { type: 'submit', class: 'button' }, '筛选订单'));
+  form.addEventListener('submit', event => { event.preventDefault(); go(`orders?${new URLSearchParams({ page: '1', status: status.input.value })}`); });
+  return el('section', {}, heading('我的订单', '支付、取消和收货均以服务器最新状态为准。', button('刷新订单', navigate)), form, pendingBanner(), orders.length ? el('div', { class: 'stack' }, orders.map(order => el('article', { class: 'card' },
     el('div', { class: 'order-top' }, el('strong', {}, `订单 #${order.id}`), badge(order.status)), el('div', { class: 'order-items' }, order.items.map(item => el('div', { class: 'order-item' }, `${item.productName} × ${item.quantity}`, money(item.lineAmount)))),
-    el('div', { class: 'line' }, el('span', { class: 'muted' }, time(order.createdAt)), el('strong', {}, `应付 ${money(order.totalAmount)}`)), button('查看订单', () => viewOrder(order.id))))) : empty('还没有订单，去发现喜欢的商品吧。'));
+    el('div', { class: 'line' }, el('span', { class: 'muted' }, time(order.createdAt)), el('strong', {}, `应付 ${money(order.totalAmount)}`)), button('查看订单', () => viewOrder(order.id))))) : empty('没有符合条件的订单。'),
+    pager(result.page, result.size, result.total, next => { query.set('page', next); return go(`orders?${query}`); }));
 }
 
 async function navigate() {

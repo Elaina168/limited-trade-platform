@@ -148,10 +148,10 @@ class CheckoutTransactionIntegrationTest {
         addresses.deleteAddress(8011,12011);
         var second=login("checkout_persist");
         mvc.perform(get("/api/orders").session(second)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].items.length()").value(2))
-                .andExpect(jsonPath("$[0].address.recipientName").value("张三"));
+                .andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].address.recipientName").value("张三"));
         mvc.perform(get("/api/cart/items").session(second)).andExpect(content().json("[]"));
-        var other=login("checkout_other");mvc.perform(get("/api/orders").session(other)).andExpect(content().json("[]"));
+        var other=login("checkout_other");mvc.perform(get("/api/orders").session(other)).andExpect(jsonPath("$.items.length()").value(0));
     }
 
     private void assertNoOrder(){

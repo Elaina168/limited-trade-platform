@@ -1,0 +1,428 @@
+{
+  "uid": "limited-trade-messages",
+  "title": "订单消息监控",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "limited-trade",
+    "messages"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "description": "共享数据库和队列指标跨实例取最大值，不相加。队列计数不含unacked；采集失败为空，不等于0。2分钟无新样本时无数据。",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "待发送Outbox事件",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"outboxPending\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "等待重试的Outbox事件",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"outboxRetrying\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "保留记录中的失败尝试",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"storedFailedAttempts\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "最老待发送事件年龄",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"oldestPendingSeconds\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "已到期未关闭订单",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"overdueOrders\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "当前最大关单延迟",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"oldestOverdueSeconds\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "近一小时关闭订单",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"closedLastHour\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "近一小时记录最大关单延迟",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"closedLastHourMaxDelaySeconds\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "失败队列待投递消息",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"failedReady\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "关单队列待投递消息",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"readyReady\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "等待队列待投递消息",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"waitReady\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "队列采集可用（1可用）",
+      "datasource": {
+        "type": "loki",
+        "uid": "limited-trade-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"queuesAvailable\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ]
+}

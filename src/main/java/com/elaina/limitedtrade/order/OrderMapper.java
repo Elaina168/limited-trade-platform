@@ -13,7 +13,10 @@ public interface OrderMapper {
 
     TradeOrder findOwnedOrder(@Param("id") long id, @Param("userId") long userId);
 
-    List<TradeOrder> findUserOrders(long userId);
+    long countUserOrders(@Param("userId") long userId, @Param("status") String status);
+
+    List<TradeOrder> findUserOrders(@Param("userId") long userId, @Param("status") String status,
+                                  @Param("offset") long offset, @Param("limit") int limit);
 
     int insertOrder(TradeOrder order);
 

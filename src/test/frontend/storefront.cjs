@@ -39,7 +39,11 @@ async function fixture(browser,role=null){
     if(/^\/api\/addresses\/\d+/.test(p)){const id=Number(p.split('/')[3]);if(p.endsWith('/default')){s.addresses.forEach(a=>a.defaultAddress=a.id===id);return done();}if(m==='DELETE'){s.addresses=s.addresses.filter(a=>a.id!==id);return done();}Object.assign(s.addresses.find(a=>a.id===id),d);return json(s.addresses.find(a=>a.id===id));}
     if(p==='/api/cart/items')return json(s.cart);
     if(p.startsWith('/api/cart/items/')){const id=Number(p.split('/')[4]);s.cart=s.cart.filter(i=>i.productId!==id);if(m==='PUT')s.cart.push({...s.products.find(i=>i.id===id),productId:id,quantity:d.quantity});return done();}
-    if(p==='/api/orders'&&m==='GET')return json(s.orders);
+    if(p==='/api/orders'&&m==='GET'){
+      const page=Number(url.searchParams.get('page')||1),size=Number(url.searchParams.get('size')||20),status=url.searchParams.get('status');
+      const items=s.orders.filter(o=>!status||o.status===status);
+      return json({page,size,total:items.length,items:items.slice((page-1)*size,page*size)});
+    }
     if((p==='/api/orders'||p==='/api/orders/checkout')&&m==='POST'){
       assert.ok(d.requestId&&d.addressId);assert.ok(!('userId'in d));
       const old=s.orders.find(o=>o.requestId===d.requestId);if(old)return json(old);
@@ -69,6 +73,25 @@ async function close(page){await page.locator('dialog').getByRole('button',{name
   const browser = await chromium.launch({ headless: true });
   const only=process.env.WEB_UI_CASE;
   try {
+    if(!only||only==='pagination'){
+      const{page,context,s}=await fixture(browser,'USER');
+      s.orders=Array.from({length:23},(_,i)=>({id:200-i,userId:1,status:i%2?'PAID':'PENDING_PAYMENT',requestId:`page-${i}`,items:[{productName:`分页商品${i}`,quantity:1,lineAmount:20}],originalAmount:20,discountAmount:0,totalAmount:20,createdAt:past,expiresAt:future,address:null,shipment:null,coupon:null}));
+      await open(page,'orders','我的订单');await page.getByText('第 1 页 · 共 23 条',{exact:true}).waitFor();
+      assert.equal(await page.locator('main article').count(),20);assert.equal(await page.getByRole('button',{name:'上一页',exact:true}).isDisabled(),true);
+      await page.getByRole('button',{name:'下一页',exact:true}).click();await page.getByText('第 2 页 · 共 23 条',{exact:true}).waitFor();
+      assert.equal(await page.locator('main article').count(),3);assert.equal(await page.getByRole('button',{name:'下一页',exact:true}).isDisabled(),true);
+      await page.getByRole('button',{name:'查看订单',exact:true}).first().click();await submit(page,'取消订单');await close(page);
+      await page.getByText('第 2 页 · 共 23 条',{exact:true}).waitFor();await page.getByRole('button',{name:'刷新订单',exact:true}).click();
+      await page.getByText('第 2 页 · 共 23 条',{exact:true}).waitFor();
+      await page.getByLabel('订单状态',{exact:true}).selectOption('PAID');await page.getByRole('button',{name:'筛选订单',exact:true}).click();
+      await page.getByText('第 1 页 · 共 11 条',{exact:true}).waitFor();assert.equal(await page.locator('main article').count(),11);
+      assert.ok(s.requests.some(r=>r.p==='/api/orders'&&new URLSearchParams(r.query).get('page')==='2'));
+      assert.equal(new URLSearchParams(s.requests.filter(r=>r.p==='/api/orders'&&r.m==='GET').at(-1).query).get('status'),'PAID');
+      await page.getByLabel('订单状态',{exact:true}).selectOption('SHIPPED');await page.getByRole('button',{name:'筛选订单',exact:true}).click();
+      await page.getByText('没有符合条件的订单。',{exact:true}).waitFor();await page.getByText('第 1 页 · 共 0 条',{exact:true}).waitFor();
+      await page.getByLabel('订单状态',{exact:true}).selectOption('');await page.getByRole('button',{name:'筛选订单',exact:true}).click();await page.getByText('第 1 页 · 共 23 条',{exact:true}).waitFor();
+      assert.deepEqual(s.errors,[]);await context.close();console.log('PASS 用户订单分页、筛选、空结果和操作刷新');
+    }
     if(!only||only==='trace'){
       const{page,context,s}=await fixture(browser,'USER');
       await page.getByRole('button',{name:'立即购买',exact:true}).click();

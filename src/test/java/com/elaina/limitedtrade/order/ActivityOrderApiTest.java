@@ -225,7 +225,7 @@ class ActivityOrderApiTest {
         mockMvc.perform(get("/api/orders/" + id).with(buyer())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].activityId").value(9401));
         mockMvc.perform(get("/api/orders").with(buyer())).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].items[0].activityId").value(9401));
+                .andExpect(jsonPath("$.items[0].items[0].activityId").value(9401));
         mockMvc.perform(get("/api/admin/orders").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].items[0].activityId").value(9401));
     }

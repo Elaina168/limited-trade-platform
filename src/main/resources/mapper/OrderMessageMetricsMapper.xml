@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.observability.OrderMessageMetricsMapper">
+    <!-- 两个聚合在同一条只读查询中使用同一数据库快照，不查询错误正文或用户资料。 -->
+    <select id="snapshot" resultType="com.elaina.limitedtrade.observability.OrderMessageDatabaseStats">
+        SELECT o.*, t.* FROM (
+            SELECT COUNT(CASE WHEN status='PENDING' THEN 1 END) AS outbox_pending,
+                   COUNT(CASE WHEN status='PENDING' AND attempt_count&gt;0 THEN 1 END) AS outbox_retrying,
+                   COALESCE(SUM(CASE WHEN status='SENT' THEN GREATEST(attempt_count-1,0)
+                                     ELSE attempt_count END),0) AS stored_failed_attempts,
+                   COALESCE(MAX(CASE WHEN status='PENDING'
+                       THEN GREATEST(TIMESTAMPDIFF(SECOND,created_at,#{now}),0) END),0) AS oldest_pending_seconds
+            FROM order_timeout_outbox
+        ) o CROSS JOIN (
+            SELECT COUNT(CASE WHEN status='PENDING_PAYMENT' AND expires_at&lt;=#{now} THEN 1 END) AS overdue_orders,
+                   COALESCE(MAX(CASE WHEN status='PENDING_PAYMENT' AND expires_at&lt;=#{now}
+                       THEN TIMESTAMPDIFF(SECOND,expires_at,#{now}) END),0) AS oldest_overdue_seconds,
+                   COUNT(CASE WHEN status='CLOSED' AND ended_at BETWEEN DATE_SUB(#{now},INTERVAL 1 HOUR) AND #{now}
+                       THEN 1 END) AS closed_last_hour,
+                   COALESCE(MAX(CASE WHEN status='CLOSED' AND ended_at BETWEEN DATE_SUB(#{now},INTERVAL 1 HOUR) AND #{now}
+                       THEN GREATEST(TIMESTAMPDIFF(SECOND,expires_at,ended_at),0) END),0) AS closed_last_hour_max_delay_seconds
+            FROM trade_order
+        ) t
+    </select>
+</mapper>

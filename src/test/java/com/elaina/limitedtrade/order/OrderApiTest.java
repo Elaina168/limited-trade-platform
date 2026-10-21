@@ -139,9 +139,9 @@ class OrderApiTest {
         mockMvc.perform(get("/api/orders/" + orderId).with(buyer(7102)))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/orders").with(buyer(7102)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(0));
         mockMvc.perform(get("/api/orders").with(buyer(7101)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(1));
         assertEquals(new BigDecimal("258.00"), jdbcTemplate.queryForObject(
                 "SELECT total_amount FROM trade_order WHERE id = ?", BigDecimal.class, orderId));
     }

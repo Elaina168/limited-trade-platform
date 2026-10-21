@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import com.elaina.limitedtrade.order.message.*;
 import com.elaina.limitedtrade.product.ProductCache;
+import com.elaina.limitedtrade.observability.OrderMessageMonitor;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +72,7 @@ class OrderTimeoutMessagingIntegrationTest {
     @MockitoSpyBean private ProductCache cache;
     @Autowired private RabbitAdmin admin;
     @Autowired private AtomicLong idleAt;
+    @Autowired private OrderMessageMonitor monitor;
     private boolean owned;
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -210,6 +212,10 @@ class OrderTimeoutMessagingIntegrationTest {
         jdbc.update("UPDATE product SET stock=2147483647 WHERE id=9803");
         publisher.publishOne(event(id));
         await().atMost(Duration.ofSeconds(12)).until(() -> admin.getQueueInfo(queue("failed")).getMessageCount() == 1);
+        var failureSnapshot = monitor.sample();
+        assertTrue(failureSnapshot.queues().available());
+        assertEquals(1, failureSnapshot.queues().failedReady());
+        assertTrue(failureSnapshot.alerts().contains("FAILED_MESSAGES"));
         Message failed = rabbit.receive(queue("failed"), 2000);
         assertNotNull(failed);
         assertEquals("rejected", failed.getMessageProperties().getXDeathHeader().getFirst().get("reason"));
@@ -221,6 +227,9 @@ class OrderTimeoutMessagingIntegrationTest {
         sender.send(message(id));
         awaitDrained();
         assertStock(10, 5);
+        var recoveredSnapshot = monitor.sample();
+        assertEquals(0, recoveredSnapshot.queues().failedReady());
+        assertTrue(recoveredSnapshot.alerts().isEmpty());
     }
 
     @ParameterizedTest

@@ -1,0 +1,153 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "order-message-monitor",
+      "folder": "Limited Trade",
+      "interval": "10s",
+      "rules": [
+        {
+          "uid": "trade-message-health",
+          "title": "订单消息链路异常",
+          "condition": "B",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 180,
+                "to": 0
+              },
+              "datasourceUid": "limited-trade-loki",
+              "model": {
+                "refId": "A",
+                "expr": "max(last_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\", value=\"alertCount\" | event=\"order_message_health\" | unwrap value | __error__=\"\" [2m]) by (instance))",
+                "queryType": "instant",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "B",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "type": "query",
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "B"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "Alerting",
+          "for": "20s",
+          "annotations": {
+            "summary": "消息积压、关单延迟或队列采集异常持续存在",
+            "description": "查看订单消息监控及event=order_message_health日志，按docs/learning/32-message-operations.md核对数据源并处理。"
+          },
+          "labels": {
+            "service": "limited-trade-messages",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "trade-message-sampling-missing",
+          "title": "订单消息监控采样缺失",
+          "condition": "B",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 180,
+                "to": 0
+              },
+              "datasourceUid": "limited-trade-loki",
+              "model": {
+                "refId": "A",
+                "expr": "absent_over_time({app=\"limited-trade\",source=\"java\"} | json event=\"event\" | event=\"order_message_health\" [2m])",
+                "queryType": "instant",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "B",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "type": "query",
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "B"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "Alerting",
+          "for": "20s",
+          "annotations": {
+            "summary": "两分钟没有采样，检查应用、数据库及日志采集链路",
+            "description": "查看订单消息监控及event=order_message_health日志，按docs/learning/32-message-operations.md核对数据源并处理。"
+          },
+          "labels": {
+            "service": "limited-trade-messages",
+            "severity": "warning"
+          },
+          "isPaused": false
+        }
+      ]
+    }
+  ]
+}

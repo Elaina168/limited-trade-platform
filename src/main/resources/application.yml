@@ -72,6 +72,12 @@ logging:
       total-size-cap: 100MB
       clean-history-on-start: true
 
+springdoc:
+  paths-to-match: /api/**
+  default-produces-media-type: application/json
+  swagger-ui:
+    disable-swagger-default-url: true
+
 app:
   order-rate-limit:
     enabled: true
@@ -82,6 +88,12 @@ app:
     enabled: true
   order-message:
     enabled: true
+    monitor:
+      enabled: true
+      interval-ms: 30000
+      pending-age-seconds: 60
+      ready-messages: 100
+      overdue-seconds: 60
     name-prefix: limited-trade
     wait-ttl-ms: 900000
   product-cache:

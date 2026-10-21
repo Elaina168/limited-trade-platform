@@ -76,7 +76,7 @@ class RegistrationIntegrationTest {
         mvc.perform(post("/api/auth/logout").session(session).with(csrf())).andExpect(status().isNoContent());
         assertTrue(session.isInvalid());
         var second=login(name);
-        mvc.perform(get("/api/orders").session(second)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        mvc.perform(get("/api/orders").session(second)).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(1));
         mvc.perform(post("/api/auth/login").with(csrf()).param("username",name).param("password","WrongPassword2026!"))
                 .andExpect(status().isUnauthorized());
     }

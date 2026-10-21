@@ -93,7 +93,7 @@ class FulfillmentApiTest {
                 .andExpect(jsonPath("$.endedAt").isEmpty());
         mvc.perform(get("/api/admin/orders").with(admin()).param("status","COMPLETED"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
-        mvc.perform(get("/api/orders").with(buyer(8101))).andExpect(jsonPath("$[4].shipment.trackingNo").value("TRACK-001"));
+        mvc.perform(get("/api/orders").with(buyer(8101))).andExpect(jsonPath("$.items[4].shipment.trackingNo").value("TRACK-001"));
         assertEquals(7,stock());
     }
 

@@ -227,10 +227,12 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public List<TradeOrder> listUserOrders(long userId) {
-        List<TradeOrder> orders = orderMapper.findUserOrders(userId);
+    public OrderPageResponse listUserOrders(long userId, int page, int size, String status) {
+        long offset = (long) (page - 1) * size;
+        long total = orderMapper.countUserOrders(userId, status);
+        List<TradeOrder> orders = orderMapper.findUserOrders(userId, status, offset, size);
         loadDetails(orders);
-        return orders;
+        return new OrderPageResponse(page, size, total, orders.stream().map(OrderResponse::from).toList());
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

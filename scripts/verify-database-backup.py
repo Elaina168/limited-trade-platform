@@ -104,7 +104,7 @@ if __name__ == "__main__":
                            {"Content-Type": "application/x-www-form-urlencoded", csrf["headerName"]: csrf["token"]})[0] == 204
             assert request(client, "/api/auth/me")[1]["username"] == account["username"]
             products = request(client, "/api/products")[1]
-            orders = request(client, "/api/orders")[1]
+            orders = request(client, "/api/orders")[1]["items"]
             assert products, "当前备份应有在售商品"
             assert orders == [], "本次源库无订单，只验证空订单查询"
             csrf = request(client, "/api/auth/csrf")[1]

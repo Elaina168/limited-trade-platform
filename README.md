@@ -24,6 +24,10 @@
 
 2026-10-19起按用户要求，每次新增功能只做覆盖本次改动的最小必要验证；发现实际失败才补关联检查，功能验证通过即停止，不自动全量回归。
 
+## 2026-10-21专项更新
+
+按用户决定取消SQL Server专项，后续顺序改为Spring Cloud → MongoDB。独立Spring Cloud工程位于`D:\codex\Java\spring-cloud-lab`，已完成注册发现、配置重启生效、网关与服务调用、双实例分发、超时熔断恢复及网关分层限流；构建、6项单测与13组真实HTTP/清理检查通过，实验进程已停止。详情见该工程README.md与docs/results.md。不代表当前交易系统已拆分微服务；分页、OpenAPI、AI、前端展示及Docker等继续按路线单独推进，未提交推送。
+
 ## 参考项目
 
 - [macrozheng/mall](https://github.com/macrozheng/mall) 与 [mall-learning](https://github.com/macrozheng/mall-learning)：按具体问题查阅商品、订单与交易设计。
@@ -214,7 +218,7 @@ MockMvc 不启动真实 HTTP 监听端口。商品查询测试实际连接 MySQL
 | 接口 | 请求或结果 |
 |---|---|
 | POST `/api/orders` | `productId`、`quantity`、`requestId`；首次201，同请求重试200 |
-| GET `/api/orders` | 返回当前登录用户的订单，按编号降序 |
+| GET `/api/orders` | 本人订单分页：`page=1`、`size=20`（最多100）、可选`status`；返回`page/size/total/items`，按编号降序 |
 | GET `/api/orders/{id}` | 返回当前用户的指定订单；不存在或属于别人均404 |
 
 用户编号从认证身份取得，价格与商品名称从数据库取得；客户端传入的用户编号和金额不作为下单依据。创建订单时扣减可售库存，并保存成交快照；当前状态为 `PENDING_PAYMENT`。
@@ -521,7 +525,7 @@ POST `/api/orders` 新增可选正数addressId，活动与普通DIRECT均可选�
 
 后续顺序：实际启动后的浏览器联调确认 → 应用日志基本功 → Docker/Compose → Nginx单实例入口 → 多实例负载均衡与Redis共享Session → 集中日志收集 → 综合故障演练。原先分步做页面的安排已按用户要求合并为当前完整前端阶段。
 
-按用户提供的“Java开发工程师”岗位截图，路线还补入：Java/JVM/并发基础、Spring与Boot原理、Spring Cloud专项、RabbitMQ/MySQL底层机制、MS SQL（SQL Server）与MongoDB、Python、PyTorch/TensorFlow、NLP加分项，以及代码质量、敏捷协作、沟通分析和团队推进实践。各项当前证据、后续内容及学习顺序见 [岗位要求对照](docs/roadmap.md#岗位截图补充要求与学习安排)。
+按用户提供的“Java开发工程师”岗位截图，路线还补入：Java/JVM/并发基础、Spring与Boot原理、Spring Cloud专项、RabbitMQ/MySQL底层机制、MongoDB（SQL Server专项已于2026-10-21取消）、Python、PyTorch/TensorFlow、NLP加分项，以及代码质量、敏捷协作、沟通分析和团队推进实践。各项当前证据、后续内容及学习顺序见 [岗位要求对照](docs/roadmap.md#岗位截图补充要求与学习安排)。
 
 Spring Cloud明确列为后续专项，先在独立小实验中学习；是否引入当前交易系统另行设计。SQL Server/MongoDB不替换现有交易库，Python和深度学习安排为单独学习线；Kubernetes仍作为进阶方向。待做内容不作为已实现能力；具体工具、版本和安装在对应阶段单独确认。本次只更新路线文档，没有安装中间件、修改业务代码或重新运行测试。
 
@@ -538,3 +542,7 @@ Spring Cloud明确列为后续专项，先在独立小实验中学习；是否�
 第二十八阶段已补齐隔离真实交易与MQ故障链路；入口18082及交易JVM仅在专项期间运行，仍未接入真实支付/物流。显式启用方式、隔离及清理边界见[第二十八阶段](docs/learning/28-trade-drill.md)。
 
 第二十九阶段已完成MySQL逻辑备份与新隔离库恢复：14张表结构、行数和数据摘要一致，已有库/篡改SQL/不安全目录拒绝通过，既有JAR连接恢复库的登录、在售商品与空订单查询通过。备份和恢复库保留，开发库未修改；使用步骤和验证边界见[备份与恢复](docs/learning/29-database-backup.md)。
+
+用户订单已补齐分页与状态筛选，沿用管理员分页结构，用户页面与相关调用方同步调整。152项关联后端测试及4组浏览器契约场景通过；请求示例、返回结构变化及验证边界见[用户订单分页](docs/learning/30-user-order-pagination.md)。MongoDB按用户要求暂时跳过；OpenAPI在线文档现已接入，见[接口文档说明](docs/learning/31-openapi.md)。
+
+消息运维增强已提供管理员只读快照`GET /api/admin/operations/order-messages`、定时结构化采样、12个Grafana面板及2条本机告警。19项关联测试通过，真实MQ修复重投后的监控恢复及受控样本的实际告警触发/恢复分别验证；指标口径与处理顺序见[消息监控和故障处理](docs/learning/32-message-operations.md)。未接入外部通知或自动生产重投。

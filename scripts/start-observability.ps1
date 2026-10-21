@@ -49,7 +49,8 @@ $owned = @()
 try {
     foreach ($component in $components) {
         $process = Start-Process -FilePath $component.Exe -ArgumentList $component.Args -WorkingDirectory $projectRoot -Environment $component.Env -WindowStyle Hidden -PassThru -RedirectStandardOutput "$runtime/$($component.Name).stdout.log" -RedirectStandardError "$runtime/$($component.Name).stderr.log"
-        $owned += @{ name = $component.Name; id = $process.Id; path = $process.Path; startedTicks = $process.StartTime.ToUniversalTime().Ticks }
+        # 刚启动时Process.Path可能尚未可读，记录已知的绝对启动路径，停止时仍核验实际进程身份。
+        $owned += @{ name = $component.Name; id = $process.Id; path = [IO.Path]::GetFullPath($component.Exe); startedTicks = $process.StartTime.ToUniversalTime().Ticks }
         ConvertTo-Json -InputObject @($owned) | Set-Content -Encoding utf8NoBOM $stateFile
         $ready = $false
         $lastReadiness = '未收到就绪响应'
