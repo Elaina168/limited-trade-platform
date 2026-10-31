@@ -1,0 +1,11 @@
+# 复制为同目录agent.properties后编辑；真实配置已被Git忽略。
+# 密钥仅在本机填写，不发送到聊天，不提交到版本库。
+app.agent.enabled=true
+app.agent.api-key=${DEEPSEEK_API_KEY:}
+app.agent.base-url=https://api.deepseek.com
+app.agent.model=deepseek-flash
+app.agent.model-timeout=10s
+app.agent.request-timeout=45s
+app.agent.max-model-calls=4
+app.agent.max-tool-calls=4
+app.agent.max-output-tokens=1024

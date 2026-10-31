@@ -6,6 +6,7 @@ spring:
     import:
       - file:./config/db.properties
       - file:./config/rabbitmq.properties
+      - optional:file:./config/agent.properties
   application:
     name: limited-trade-platform
   datasource:
@@ -79,6 +80,9 @@ springdoc:
     disable-swagger-default-url: true
 
 app:
+  agent:
+    enabled: ${AGENT_ENABLED:false}
+    api-key: ${DEEPSEEK_API_KEY:}
   order-rate-limit:
     enabled: true
     max-requests: 5

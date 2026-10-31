@@ -4,6 +4,8 @@
 
 ## 最新安排
 
+2026-10-31更新：当前主线转为Java后端＋Agent应用开发，交易工程采用Spring AI与DeepSeek实施本人订单咨询及规则解释，详见[交易业务Agent](../learning/33-trade-agent.md)。SQL Server取消、MongoDB暂时跳过的决定保留。以下AI暂缓表述仅描述2026-10-21的历史安排，不阻塞当前阶段。
+
 用户已完成Java基础/并发/JVM、Spring/MVC/Boot、MySQL原理的学习。八股由用户自行学习；Redis/RabbitMQ原理与设计模式不再作为当前实践的前置任务。Python、爬虫、LLM、RAG、Agent、深度学习、多模态、生成与分割暂缓，保留长期路线。
 
 原定顺序：Spring Cloud → MongoDB；Spring Cloud完成后，用户暂时跳过MongoDB，先实施交易项目用户订单分页。一次完成一个专项的实现、配置、脚本、文档和最小必要验证，再统一报告；源码仍按类、方法或小步骤讲解，等用户说“继续”。

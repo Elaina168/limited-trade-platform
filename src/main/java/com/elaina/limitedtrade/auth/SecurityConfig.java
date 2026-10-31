@@ -38,6 +38,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/agent/chat").authenticated()
                         .requestMatchers("/api/cart/items", "/api/cart/items/**").authenticated()
                         .requestMatchers("/api/addresses", "/api/addresses/**").authenticated()
                         .requestMatchers("/api/coupons/**").authenticated()

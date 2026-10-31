@@ -15,6 +15,7 @@ application-local.properties
 config/db.properties
 config/local-accounts.txt
 config/rabbitmq.properties
+config/agent.properties
 config/container/
 *.log
 logs/
