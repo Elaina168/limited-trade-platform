@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.agent.conversation.AgentConversationMapper">
+    <delete id="deleteExpired">DELETE FROM agent_conversation WHERE user_id=#{userId} AND expires_at &lt;= #{now}</delete>
+    <select id="countOwned" resultType="int">SELECT COUNT(*) FROM agent_conversation WHERE user_id=#{userId}</select>
+    <insert id="insert">
+        INSERT INTO agent_conversation(id,user_id,revision,expires_at) VALUES (#{id},#{userId},#{revision},#{expiresAt})
+    </insert>
+    <select id="lockOwned" resultType="com.elaina.limitedtrade.agent.conversation.AgentConversation">
+        SELECT id,user_id,revision,generation_token,busy_until,expires_at FROM agent_conversation
+        WHERE id=#{id} AND user_id=#{userId} FOR UPDATE
+    </select>
+    <update id="claim">
+        UPDATE agent_conversation SET generation_token=#{token},busy_until=#{until} WHERE id=#{id}
+    </update>
+    <update id="release">
+        UPDATE agent_conversation SET generation_token=NULL,busy_until=NULL WHERE id=#{id} AND generation_token=#{token}
+    </update>
+    <update id="advance">
+        UPDATE agent_conversation SET revision=revision+1,generation_token=NULL,busy_until=NULL,expires_at=#{expiry} WHERE id=#{id}
+    </update>
+    <select id="findTurns" resultType="java.lang.String">
+        SELECT messages_json FROM agent_conversation_turn WHERE conversation_id=#{id} ORDER BY turn_no
+    </select>
+    <delete id="deleteTurns">DELETE FROM agent_conversation_turn WHERE conversation_id=#{id}</delete>
+    <insert id="insertTurn">
+        INSERT INTO agent_conversation_turn(conversation_id,turn_no,messages_json) VALUES (#{id},#{number},#{json})
+    </insert>
+</mapper>

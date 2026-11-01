@@ -40,7 +40,7 @@ class AgentApiTest {
 
     @Test void authenticatedRequestUsesPrincipalInsteadOfClientUserId() throws Exception {
         var answer = new AgentChatResponse("没有订单", LocalDateTime.now(), List.of("list_my_orders"),
-                List.of(), 2, 1, 30L, 20);
+                List.of(), 2, 1, 30L, 20, List.of());
         when(service.chat(7301L, "查询订单")).thenReturn(answer);
         mvc.perform(post("/api/agent/chat").with(csrf()).with(user(new PlatformUserDetails(
                                 new AppUser(7301L, "buyer", "unused", "USER"))))

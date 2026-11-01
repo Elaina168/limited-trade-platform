@@ -218,4 +218,89 @@ class TradeAgentProtocolTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY)));
     }
+
+    @Test void ragToolReturnsOnlyActuallyRetrievedChunkSources() throws Exception {
+        var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
+        var chunk = new com.elaina.limitedtrade.agent.rag.RuleChunk("chunk-1", "payment", "支付期限",
+                "knowledge/payment.md", 4, 4, "订单创建15分钟后到期。", 0.9);
+        when(knowledge.search("支付期限"))
+                .thenReturn(new com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.SearchResult("MATCHED", List.of(chunk)));
+        replies.add(toolReply("search_trade_rules", "{\"query\":\"支付期限\"}"));
+        replies.add(answerReply());
+        runner().withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge).run(context -> {
+            var result = context.getBean(TradeAgentService.class).chat(7301, "支付期限");
+            assertThat(result.knowledgeSources()).containsExactly(chunk);
+            assertThat(result.sources()).isEmpty();
+        });
+        assertThat(requests.getFirst().path("tools").toString()).contains("search_trade_rules").doesNotContain("\"name\":\"get_trade_rules\"");
+    }
+
+    @Test void successfulTurnsKeepPairedToolHistoryButNotOldSources() throws Exception {
+        replies.add(toolReply("get_trade_rules", "{\"topic\":\"PAYMENT\"}"));
+        replies.add(answerReply());
+        replies.add(answerReply());
+        runner().run(context -> {
+            var service = context.getBean(TradeAgentService.class);
+            var first = service.chatTurn(7301, "支付规则", List.of());
+            assertThat(first.messages()).hasSize(4);
+            assertThat(first.messages().stream().map(message -> message.getMessageType().getValue()).toList())
+                    .containsExactly("user", "assistant", "tool", "assistant");
+            var second = service.chatTurn(7301, "继续解释", first.messages());
+            assertThat(second.response().sources()).isEmpty();
+            assertThat(second.response().knowledgeSources()).isEmpty();
+            assertThat(second.messages()).hasSize(2);
+            assertThat(requests.get(2).path("messages")).hasSize(6);
+            assertThat(requests.get(2).path("messages").get(3).path("role").asText()).isEqualTo("tool");
+        });
+    }
+
+    @Test void followUpToolQueryUsesFreshOrderDataAndSameTrustedUser() throws Exception {
+        var order = new com.elaina.limitedtrade.order.TradeOrder();
+        order.setId(9301L);
+        order.setUserId(7301L);
+        order.setStatus("PENDING_PAYMENT");
+        order.setItems(List.of());
+        when(orders.getUserOrder(7301L, 9301L)).thenReturn(order);
+        replies.add(toolReply("get_my_order", "{\"orderId\":9301}"));
+        replies.add(answerReply());
+        replies.add(toolReply("get_my_order", "{\"orderId\":9301}"));
+        replies.add(answerReply());
+        runner().run(context -> {
+            var service = context.getBean(TradeAgentService.class);
+            var first = service.chatTurn(7301, "查询9301", List.of());
+            order.setStatus("CLOSED");
+            service.chatTurn(7301, "它现在什么状态", first.messages());
+            var messages = requests.get(3).path("messages");
+            var latestTool = messages.get(messages.size() - 1);
+            assertThat(latestTool.path("role").asText()).isEqualTo("tool");
+            assertThat(latestTool.path("content").asText()).contains("CLOSED");
+            assertThat(requests.get(2).path("messages").get(0).path("content").asText())
+                    .contains("历史订单结果不是当前事实", "重新查询本人订单工具", "本次请求重新调用规则工具", "先请求提供订单ID或明确指代");
+        });
+        verify(orders, times(2)).getUserOrder(7301L, 9301L);
+    }
+
+    @Test void noEvidenceDoesNotCreateSources() throws Exception {
+        var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
+        when(knowledge.search("退货邮费"))
+                .thenReturn(new com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.SearchResult("NO_EVIDENCE", List.of()));
+        replies.add(toolReply("search_trade_rules", "{\"query\":\"退货邮费\"}"));
+        replies.add(answerReply());
+        runner().withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge).run(context -> {
+            var result = context.getBean(TradeAgentService.class).chat(7301, "退货邮费");
+            assertThat(result.knowledgeSources()).isEmpty();
+            assertThat(result.sources()).isEmpty();
+        });
+        assertThat(requests.get(1).path("messages").toString()).contains("NO_EVIDENCE");
+    }
+
+    @Test void localInferenceFailurePropagatesInsteadOfBecomingNoEvidence() throws Exception {
+        var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
+        when(knowledge.search("支付期限")).thenThrow(new IllegalStateException("本地BGE推理失败"));
+        replies.add(toolReply("search_trade_rules", "{\"query\":\"支付期限\"}"));
+        runner().withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge).run(context ->
+                assertThatThrownBy(() -> context.getBean(TradeAgentService.class).chat(7301, "支付期限"))
+                        .hasStackTraceContaining("本地BGE推理失败"));
+        assertThat(requests).hasSize(1);
+    }
 }

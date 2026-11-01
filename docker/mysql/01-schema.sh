@@ -17,6 +17,7 @@ for script in \
     011_order_checkout.sql \
     012_order_shipment.sql \
     013_activity_coupon.sql \
+    014_agent_conversation.sql \
     seed.sql \
     demo_catalog.sql
 do

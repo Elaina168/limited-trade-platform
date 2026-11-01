@@ -2,6 +2,8 @@ package com.elaina.limitedtrade.agent;
 
 import com.elaina.limitedtrade.order.OrderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase;
+import java.util.Optional;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -15,7 +17,8 @@ public class AgentConfiguration {
         return new TradeAgentTools(orders);
     }
 
-    @Bean TradeAgentService tradeAgentService(AgentProperties properties, TradeAgentTools tools, ObjectMapper mapper) {
-        return new TradeAgentService(properties, tools, mapper);
+    @Bean TradeAgentService tradeAgentService(AgentProperties properties, TradeAgentTools tools, ObjectMapper mapper,
+                                             Optional<RuleKnowledgeBase> knowledge) {
+        return new TradeAgentService(properties, tools, mapper, knowledge);
     }
 }

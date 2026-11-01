@@ -9,3 +9,14 @@ app.agent.request-timeout=45s
 app.agent.max-model-calls=4
 app.agent.max-tool-calls=4
 app.agent.max-output-tokens=1024
+
+# 规则RAG默认关闭；先执行scripts/prepare-rag-model.py准备本地模型。
+app.agent.rag.enabled=false
+app.agent.rag.model-directory=tools/models/bge-small-zh-v1.5
+app.agent.rag.index-file=tools/rag-index/rules.json
+app.agent.rag.chunk-chars=320
+app.agent.rag.top-k=3
+# 固定校准集选择的余弦相似度阈值，不是回答正确的概率。
+app.agent.rag.similarity-threshold=0.55
+# 资料、模型或分块参数变化后显式设true启动一次，完成后改回false。
+app.agent.rag.rebuild-index=false

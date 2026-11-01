@@ -18,7 +18,9 @@
 
 新增基于Spring AI1.1.8与DeepSeek的`POST /api/agent/chat`，提供本人订单列表、订单详情与支付/取消/超时规则三个只读工具。沿用Session与CSRF，身份从服务端传递，模型只接收必要订单摘要；执行循环限制模型/工具次数和超时。默认关闭AI，密钥配置在被Git忽略的`config/agent.properties`中。
 
-配置、调用示例、测试命令和真实模型样本见[第三十三阶段说明](docs/learning/33-trade-agent.md)。首期不包含向量RAG、多轮记忆、SSE或前端聊天页面；提交状态以Git记录为准。
+配置、调用示例、测试命令和真实模型样本见[第三十三阶段说明](docs/learning/33-trade-agent.md)。新增可选的[规则RAG阶段](docs/learning/34-rule-rag.md)：本地BGE中文向量、Markdown分块、SimpleVectorStore持久化及真实检索来源。RAG默认关闭，启用后以自然语言检索替换固定主题规则工具；本人订单权限沿用原逻辑。
+
+新增[MySQL多轮会话](docs/learning/35-agent-conversations.md)：本人会话、最多6轮/24,000字符历史、并发资格和清空；当前订单重新查询，旧单轮接口保留。开发库使用前需执行`sql/014_agent_conversation.sql`，本轮只迁移并验证测试库。SSE和前端聊天页面仍未实现；提交状态以Git记录为准。
 
 ## 学习方式
 

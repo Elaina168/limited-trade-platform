@@ -39,6 +39,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/agent/chat").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/agent/conversations",
+                                "/api/agent/conversations/*/messages").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/agent/conversations/*/messages").authenticated()
                         .requestMatchers("/api/cart/items", "/api/cart/items/**").authenticated()
                         .requestMatchers("/api/addresses", "/api/addresses/**").authenticated()
                         .requestMatchers("/api/coupons/**").authenticated()

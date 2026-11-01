@@ -83,6 +83,8 @@ app:
   agent:
     enabled: ${AGENT_ENABLED:false}
     api-key: ${DEEPSEEK_API_KEY:}
+    rag:
+      enabled: ${AGENT_RAG_ENABLED:false}
   order-rate-limit:
     enabled: true
     max-requests: 5

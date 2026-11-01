@@ -1,0 +1,22 @@
+[
+  {"id":"c1","split":"calibration","query":"下单后可以等多久再付款？","expected":"payment"},
+  {"id":"c2","split":"calibration","query":"我主动撤销未付款的订单，库存会退回来吗？","expected":"cancellation"},
+  {"id":"c3","split":"calibration","query":"消息队列暂时不可用，过期订单还有其他关闭机制吗？","expected":"timeout"},
+  {"id":"c4","split":"calibration","query":"今天北京天气怎么样？","expected":null},
+  {"id":"c5","split":"calibration","query":"如何制作番茄炒蛋？","expected":null},
+  {"id":"c6","split":"calibration","query":"退货包邮费用由谁承担？","expected":null},
+  {"id":"e1","split":"evaluation","query":"订单刚好到了支付截止时刻还能付款吗？","expected":"payment"},
+  {"id":"e2","split":"evaluation","query":"这个平台能真的用微信或者支付宝扣款吗？","expected":"payment"},
+  {"id":"e3","split":"evaluation","query":"已经付款的订单还能按未付款取消吗？","expected":"cancellation"},
+  {"id":"e4","split":"evaluation","query":"同一笔取消请求发了两次，会多退库存吗？","expected":"cancellation"},
+  {"id":"e5","split":"evaluation","query":"订单过期后状态为什么还没变成关闭？","expected":"timeout"},
+  {"id":"e6","split":"evaluation","query":"重复的超时消息会不会把库存多加一遍？","expected":"timeout"},
+  {"id":"e7","split":"evaluation","query":"知道别人的订单号，可以看到对方订单吗？","expected":"order-access"},
+  {"id":"e8","split":"evaluation","query":"订单分页返回的total是什么意思？AI每次最多查几条？","expected":"order-access"},
+  {"id":"e9","split":"evaluation","query":"未发货的订单能直接确认收货吗？","expected":"fulfillment"},
+  {"id":"e10","split":"evaluation","query":"没有收货地址快照，管理员能登记发货吗？","expected":"fulfillment"},
+  {"id":"e11","split":"evaluation","query":"明天上海下不下雨？","expected":null},
+  {"id":"e12","split":"evaluation","query":"给我推荐一部科幻电影。","expected":null},
+  {"id":"e13","split":"evaluation","query":"商品损坏退货的邮费由谁支付？","expected":null},
+  {"id":"e14","split":"evaluation","query":"平台跨境进口关税按什么税率收取？","expected":null}
+]

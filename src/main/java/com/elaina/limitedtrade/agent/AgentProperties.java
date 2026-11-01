@@ -3,6 +3,8 @@ package com.elaina.limitedtrade.agent;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.Valid;
+import com.elaina.limitedtrade.agent.rag.RagProperties;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -20,7 +22,8 @@ public record AgentProperties(
         @DefaultValue("45s") Duration requestTimeout,
         @DefaultValue("4") @Min(1) @Max(10) int maxModelCalls,
         @DefaultValue("4") @Min(1) @Max(10) int maxToolCalls,
-        @DefaultValue("1024") @Min(1) @Max(4096) int maxOutputTokens) {
+        @DefaultValue("1024") @Min(1) @Max(4096) int maxOutputTokens,
+        @DefaultValue @Valid RagProperties rag) {
     public AgentProperties {
         Assert.isTrue(modelTimeout.isPositive() && modelTimeout.compareTo(Duration.ofMinutes(5)) <= 0,
                 "模型超时必须大于零且不超过五分钟");
