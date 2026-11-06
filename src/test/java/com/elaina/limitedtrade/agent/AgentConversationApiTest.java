@@ -28,6 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AgentConversationApiTest {
     @Autowired MockMvc mvc;
     @MockitoBean AgentConversationService service;
+    @MockitoBean AgentSseService streams;
     private final String id = UUID.randomUUID().toString();
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor principal() {

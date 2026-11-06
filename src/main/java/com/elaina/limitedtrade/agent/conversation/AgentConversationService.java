@@ -3,6 +3,8 @@ package com.elaina.limitedtrade.agent.conversation;
 import com.elaina.limitedtrade.agent.AgentChatResponse;
 import com.elaina.limitedtrade.agent.AgentProperties;
 import com.elaina.limitedtrade.agent.TradeAgentService;
+import com.elaina.limitedtrade.agent.AgentStream;
+import com.elaina.limitedtrade.agent.AgentTurn;
 import com.elaina.limitedtrade.user.AppUserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
@@ -51,39 +53,60 @@ public class AgentConversationService {
     }
 
     public AgentChatResponse chat(long userId, String id, String message) {
+        var prepared = prepare(userId, id, message);
+        try {
+            var turn = agent.chatTurn(userId, message, history.messages(prepared.turns()));
+            finish(prepared, turn);
+            return turn.response();
+        } catch (RuntimeException error) { releaseAfterFailure(prepared, error); throw error; }
+    }
+
+    public PreparedTurn prepare(long userId, String id, String message) {
         purgeExpired(userId);
-        var ticket = transaction.execute(status -> {
+        return transaction.execute(status -> {
             var now = LocalDateTime.now();
             var conversation = owned(userId, id, now);
             if (conversation.generationToken() != null && conversation.busyUntil().isAfter(now))
                 throw conflict("当前会话正在生成回答");
             String token = UUID.randomUUID().toString();
             mapper.claim(id, token, now.plus(properties.requestTimeout()).plusSeconds(30));
-            return new Ticket(conversation.revision(), token, mapper.findTurns(id));
+            return new PreparedTurn(userId, id, message, conversation.revision(), token, mapper.findTurns(id));
         });
+    }
+
+    public AgentChatResponse stream(PreparedTurn prepared, AgentStream stream) {
         try {
-            // 外部模型调用位于事务外，历史只来自服务端数据库。
-            var turn = agent.chatTurn(userId, message, history.messages(ticket.turns()));
-            String encoded = history.encode(turn.messages());
-            transaction.executeWithoutResult(status -> {
-                var now = LocalDateTime.now();
-                var current = owned(userId, id, now);
-                if (current.revision() != ticket.revision() || !ticket.token().equals(current.generationToken())
-                        || !current.busyUntil().isAfter(now)) throw conflict("会话已变化，请重新发送问题");
-                var turns = new ArrayList<>(ticket.turns());
-                turns.add(encoded);
-                var retained = history.retain(turns);
-                mapper.deleteTurns(id);
-                for (int i = 0; i < retained.size(); i++) mapper.insertTurn(id, i + 1, retained.get(i));
-                mapper.advance(id, now.plusHours(24));
-            });
+            stream.check();
+            var turn = agent.chatTurnStream(prepared.userId(), prepared.message(), history.messages(prepared.turns()), stream);
+            stream.commit(() -> finish(prepared, turn));
             return turn.response();
-        } catch (RuntimeException error) {
-            // 只释放本次资格；清空或接管后的新请求不受影响。清理失败保留为原错误的附加诊断。
-            try { transaction.executeWithoutResult(status -> mapper.release(id, ticket.token())); }
-            catch (RuntimeException cleanup) { error.addSuppressed(cleanup); }
-            throw error;
-        }
+        } catch (RuntimeException error) { releaseAfterFailure(prepared, error); throw error; }
+    }
+
+    private void finish(PreparedTurn prepared, AgentTurn turn) {
+        String encoded = history.encode(turn.messages());
+        transaction.executeWithoutResult(status -> {
+            var now = LocalDateTime.now();
+            var current = owned(prepared.userId(), prepared.id(), now);
+            if (current.revision() != prepared.revision() || !prepared.token().equals(current.generationToken())
+                    || !current.busyUntil().isAfter(now)) throw conflict("会话已变化，请重新发送问题");
+            var turns = new ArrayList<>(prepared.turns());
+            turns.add(encoded);
+            var retained = history.retain(turns);
+            mapper.deleteTurns(prepared.id());
+            for (int i = 0; i < retained.size(); i++) mapper.insertTurn(prepared.id(), i + 1, retained.get(i));
+            mapper.advance(prepared.id(), now.plusHours(24));
+        });
+    }
+
+    public void release(PreparedTurn prepared) {
+        transaction.executeWithoutResult(status -> mapper.release(prepared.id(), prepared.token()));
+    }
+
+    private void releaseAfterFailure(PreparedTurn prepared, RuntimeException error) {
+        // 只释放本次资格；清空或接管后的新请求不受影响。清理失败保留为原错误的附加诊断。
+        try { release(prepared); }
+        catch (RuntimeException cleanup) { error.addSuppressed(cleanup); }
     }
 
     public void clear(long userId, String id) {
@@ -113,5 +136,5 @@ public class AgentConversationService {
     }
 
     public record CreatedConversation(String conversationId, LocalDateTime expiresAt) { }
-    private record Ticket(long revision, String token, List<String> turns) { }
+    public record PreparedTurn(long userId, String id, String message, long revision, String token, List<String> turns) { }
 }

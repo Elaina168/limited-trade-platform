@@ -108,6 +108,13 @@ class TradeAgentProtocolTest {
         assertThat(returnedPage.path("queriedAt").isTextual()).isTrue();
     }
 
+    @Test void orderFollowUpPromptSeparatesFactsFromRuleConclusions() {
+        replies.add(answerReply());
+        runner().run(context -> context.getBean(TradeAgentService.class).chat(7301, "那它现在是什么状态？"));
+        assertThat(requests.getFirst().path("messages").get(0).path("content").asText())
+                .contains("只报告本次订单工具返回的事实", "必须在本轮调用get_trade_rules", "不得用历史规则片段代替本轮查询");
+    }
+
     @Test void otherUsersOrderFailureStopsInsteadOfBecomingNoData() throws Exception {
         when(orders.getUserOrder(7301L, 9302L)).thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "订单不存在"));
         replies.add(toolReply("get_my_order", "{\"orderId\":9302}"));

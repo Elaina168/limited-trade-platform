@@ -20,7 +20,15 @@
 
 配置、调用示例、测试命令和真实模型样本见[第三十三阶段说明](docs/learning/33-trade-agent.md)。新增可选的[规则RAG阶段](docs/learning/34-rule-rag.md)：本地BGE中文向量、Markdown分块、SimpleVectorStore持久化及真实检索来源。RAG默认关闭，启用后以自然语言检索替换固定主题规则工具；本人订单权限沿用原逻辑。
 
-新增[MySQL多轮会话](docs/learning/35-agent-conversations.md)：本人会话、最多6轮/24,000字符历史、并发资格和清空；当前订单重新查询，旧单轮接口保留。开发库使用前需执行`sql/014_agent_conversation.sql`，本轮只迁移并验证测试库。SSE和前端聊天页面仍未实现；提交状态以Git记录为准。
+新增[MySQL多轮会话](docs/learning/35-agent-conversations.md)：本人会话、最多6轮/24,000字符历史、并发资格和清空；当前订单重新查询，旧单轮接口保留。开发库使用前需执行`sql/014_agent_conversation.sql`，会话阶段只迁移并验证测试库。
+
+新增[真实SSE流式输出](docs/learning/36-agent-sse.md)：会话流式POST、模型增量与工具轮次reset、保存成功后done、取消与并发限制。Nginx仅语法检查通过。
+
+新增[交易助手聊天页](docs/learning/37-agent-chat-page.md)，入口为首页“交易助手”：原生JavaScript接入流式回答、新会话、停止、清空及规则来源。真实浏览器＋测试MySQL＋DeepSeek已验证两轮问答，窄屏和账号隔离也已检查。用户后续学完前端再一起重做；当前不自动提交推送，提交状态以Git记录为准。
+
+新增[Agent轻量评估](docs/learning/38-agent-evaluation.md)：固定12场景、14轮真实DeepSeek请求，自动约束11场景通过；身份伪造场景实际安全拒绝，与预设404不符，保留失败记录和逐项复核。报告记录来源、工具、耗时及已知Token，默认不访问模型，不将小样本结果当作总体准确率。
+
+后续已修正安全拒绝的评估判定，并补充订单事实与规则结论的提示词边界；新版定向验证2场景3请求通过，33项离线检查通过。首轮11/12报告保留，未重新跑新版完整12场景；限制及结果见同一阶段说明。
 
 ## 学习方式
 

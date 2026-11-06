@@ -1,3 +1,5 @@
+import { readAgentStream, StreamProtocolError } from './sse.js';
+
 export class ApiError extends Error {
   constructor(status, retryAfter, path, traceId) { super(`HTTP ${status}`); this.status = status; this.retryAfter = retryAfter; this.path = path; this.traceId = traceId; }
 }
@@ -8,7 +10,7 @@ let sessionGeneration = 0;
 export function advanceSession() { sessionGeneration++; }
 export function onSessionExpired(callback) { expired = callback; }
 
-export async function api(path, options = {}) {
+async function request(path, options = {}) {
   const generation = sessionGeneration;
   let response;
   try { response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options }); }
@@ -21,6 +23,11 @@ export async function api(path, options = {}) {
     throw new ApiError(response.status, response.headers.get('Retry-After'), path, response.headers.get('X-Trace-Id'));
   }
   if (path === '/api/auth/login' || path === '/api/auth/logout') advanceSession();
+  return response;
+}
+
+export async function api(path, options = {}) {
+  const response = await request(path, options);
   if (response.status === 204) return null;
   try { return await response.json(); }
   catch (error) {
@@ -29,10 +36,10 @@ export async function api(path, options = {}) {
   }
 }
 
-export async function write(path, method = 'POST', data, form = false) {
+export async function write(path, method = 'POST', data, form = false, signal) {
   const generation = sessionGeneration;
   // 登录和退出会轮换CSRF令牌，每次写入重新获取，不自动重放写请求。
-  const csrf = await api('/api/auth/csrf');
+  const csrf = await api('/api/auth/csrf', { signal });
   if (generation !== sessionGeneration) throw new UserError('账号状态已经变化，请在当前账号下重新操作。');
   const headers = { [csrf.headerName]: csrf.token };
   let body;
@@ -40,7 +47,27 @@ export async function write(path, method = 'POST', data, form = false) {
     headers['Content-Type'] = form ? 'application/x-www-form-urlencoded;charset=UTF-8' : 'application/json';
     body = form ? new URLSearchParams(data).toString() : JSON.stringify(data);
   }
-  return api(path, { method, headers, body });
+  return api(path, { method, headers, body, signal });
+}
+
+export async function streamWrite(path, data, onEvent, signal) {
+  const generation = sessionGeneration;
+  const check = () => {
+    if (signal?.aborted) throw new DOMException('请求已停止', 'AbortError');
+    if (generation !== sessionGeneration) throw new UserError('账号状态已经变化，请重新登录后操作。');
+  };
+  const csrf = await api('/api/auth/csrf', { signal });
+  check();
+  const response = await request(path, { method: 'POST', signal,
+    headers: { [csrf.headerName]: csrf.token, 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify(data) });
+  check();
+  if (!response.headers.get('Content-Type')?.includes('text/event-stream') || !response.body) throw new UserError('助手当前无法提供流式回答。');
+  try { return await readAgentStream(response.body, (name, payload) => { check(); onEvent(name, payload); }, signal); }
+  catch (error) {
+    if (error instanceof StreamProtocolError) throw new UserError(error.message);
+    if (error instanceof TypeError) throw new UserError('连接中断，回答是否完成尚未确认；请勿自动重复发送。');
+    throw error;
+  }
 }
 
 export function errorMessage(error) {

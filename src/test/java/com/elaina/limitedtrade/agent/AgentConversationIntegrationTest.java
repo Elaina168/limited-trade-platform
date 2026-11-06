@@ -148,4 +148,29 @@ class AgentConversationIntegrationTest {
         assertThatThrownBy(action::run).isInstanceOfSatisfying(ResponseStatusException.class,
                 error -> assertThat(error.getStatusCode().value()).isEqualTo(status));
     }
+
+    @Test void preparedStreamClaimsBeforeOpeningAndOnlyCommitsCompleteTurn() {
+        var id = service.create(userId).conversationId();
+        var prepared = service.prepare(userId, id, "流式问题");
+        assertStatus(409, () -> service.prepare(userId, id, "并发"));
+        var stream = new AgentStream(event -> { });
+        when(agent.chatTurnStream(eq(userId), eq("流式问题"), anyList(), eq(stream))).thenReturn(new AgentTurn(
+                new AgentChatResponse("完整答案", java.time.LocalDateTime.now(), List.of(), List.of(), 1, 0, 1L, 1, List.of()),
+                List.of(new UserMessage("流式问题"), new AssistantMessage("完整答案"))));
+        assertThat(service.stream(prepared, stream).answer()).isEqualTo("完整答案");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_conversation_turn WHERE conversation_id=?", Integer.class, id)).isEqualTo(1);
+        var next = service.prepare(userId, id, "被取消");
+        var cancelled = new AgentStream(event -> { });
+        cancelled.cancel();
+        assertThatThrownBy(() -> service.stream(next, cancelled)).isInstanceOf(java.util.concurrent.CancellationException.class);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_conversation_turn WHERE conversation_id=?", Integer.class, id)).isEqualTo(1);
+        var last = service.prepare(userId, id, "被清空");
+        when(agent.chatTurnStream(eq(userId), eq("被清空"), anyList(), any())).thenAnswer(call -> {
+            service.clear(userId, id);
+            return new AgentTurn(new AgentChatResponse("旧答案", java.time.LocalDateTime.now(), List.of(), List.of(), 1, 0, 1L, 1, List.of()),
+                    List.of(new UserMessage("被清空"), new AssistantMessage("旧答案")));
+        });
+        assertStatus(409, () -> service.stream(last, new AgentStream(event -> { })));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_conversation_turn WHERE conversation_id=?", Integer.class, id)).isZero();
+    }
 }

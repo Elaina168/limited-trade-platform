@@ -1,11 +1,15 @@
 import { api, write, ApiError, UserError, errorMessage, onSessionExpired, advanceSession, pendingOrder, placeOrder, clearPendingOrder } from './api.js';
 import { el, button, heading, empty, line, money, time, badge, modal, formDialog, field, options, numberField, addressLabel, notify, pager, statusNames } from './ui.js';
 import { adminPage } from './admin.js';
+import { agentPage, disposeAgentPage, resetAgentIdentity } from './agent.js';
 
 const state = { user: null, ready: false };
 let version = 0;
 let identityEpoch = 0;
-function setUser(user) { state.user = user; identityEpoch++; advanceSession(); }
+function setUser(user) {
+  if (state.user?.id !== user?.id) resetAgentIdentity(state.user?.id);
+  state.user = user; identityEpoch++; advanceSession();
+}
 function captureView(sessionOnly = false) {
   const pageVersion = version, identity = identityEpoch;
   return () => identity === identityEpoch && (sessionOnly || pageVersion === version);
@@ -246,15 +250,17 @@ async function ordersPage() {
 }
 
 async function navigate() {
+  disposeAgentPage();
   const stamp = ++version; const userId = state.user?.id;
   const route = path();
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.hash.split('?')[0] === `#${route}`));
   main.replaceChildren(empty('正在加载…'));
   try {
-    if (['cart', 'addresses', 'coupons', 'orders', 'admin'].includes(route) && !state.user) {
-      main.replaceChildren(heading('登录后继续', '登录即可管理你的购物车、地址、优惠券和订单。'), button('登录 / 注册', () => openAuth(), '')); return;
+    if (['cart', 'addresses', 'coupons', 'orders', 'admin', 'agent'].includes(route) && !state.user) {
+      main.replaceChildren(heading('登录后继续', route === 'agent' ? '登录后即可咨询本人订单和平台交易规则。' : '登录即可管理你的购物车、地址、优惠券和订单。'), button('登录 / 注册', () => openAuth(), '')); return;
     }
     const render = { products: productsPage, activities: activitiesPage, cart: cartPage, addresses: addressesPage, coupons: couponsPage, orders: ordersPage,
+      agent: () => agentPage(state.user, captureView()),
       admin: () => adminPage(state.user, { go, viewOrder, guard: captureView, refresh: navigate }) }[route];
     const view = render ? await render() : await productsPage();
     if (stamp === version && userId === state.user?.id) main.replaceChildren(view);

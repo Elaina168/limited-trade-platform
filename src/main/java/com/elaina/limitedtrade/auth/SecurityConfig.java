@@ -26,7 +26,7 @@ public class SecurityConfig {
         http
                 .requestCache(cache -> cache.disable())
                 .authorizeHttpRequests(authorize -> authorize
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/assets/*.js", "/assets/styles.css").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api-docs.html", "/swagger-ui.html",
                                 "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
@@ -40,7 +40,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/agent/chat").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/agent/conversations",
-                                "/api/agent/conversations/*/messages").authenticated()
+                                "/api/agent/conversations/*/messages", "/api/agent/conversations/*/messages/stream").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/agent/conversations/*/messages").authenticated()
                         .requestMatchers("/api/cart/items", "/api/cart/items/**").authenticated()
                         .requestMatchers("/api/addresses", "/api/addresses/**").authenticated()

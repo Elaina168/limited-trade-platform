@@ -26,6 +26,8 @@ class WebUiIntegrationTest {
         mvc.perform(get("/")).andExpect(status().isOk());
         mvc.perform(get("/index.html")).andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith("text/html"));
         mvc.perform(get("/assets/app.js")).andExpect(status().isOk());
+        mvc.perform(get("/assets/agent.js")).andExpect(status().isOk());
+        mvc.perform(get("/assets/sse.js")).andExpect(status().isOk());
         mvc.perform(get("/assets/styles.css")).andExpect(status().isOk());
         mvc.perform(get("/api/admin/products")).andExpect(status().isUnauthorized());
         mvc.perform(get("/config/db.properties")).andExpect(status().isUnauthorized());
