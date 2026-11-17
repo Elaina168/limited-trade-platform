@@ -1,0 +1,123 @@
+:root {
+  font-family: Inter, "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: #26374b;
+  background: #f5f6f8;
+  font-synthesis: none;
+  --el-color-primary: #345cbb;
+  --el-color-primary-light-3: #6b87cd;
+  --el-color-primary-light-5: #99afe1;
+  --el-color-primary-light-7: #c5d2ef;
+  --el-color-primary-light-9: #eef2fb;
+  --el-color-primary-dark-2: #254a9d;
+  --el-border-radius-base: 8px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input { font: inherit; }
+a { color: inherit; text-decoration: none; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a:focus-visible, button:focus-visible { outline: 3px solid #9eb8ef; outline-offset: 4px; }
+.wordmark { display: inline-flex; align-items: center; gap: 11px; font-size: 21px; font-weight: 600; letter-spacing: 1px; }
+.brand-symbol { width: 37px; height: 37px; display: grid; place-items: center; border: 1px solid #ffffff5c; border-radius: 10px; font-size: 21px; }
+.muted { color: #738095; line-height: 1.8; }
+.startup-status { padding: 18vh 24px; color: #738095; text-align: center; font-size: 14px; }
+.section-kicker { color: #577099; font-size: 12px; letter-spacing: 2px; font-weight: 600; }
+.login-page { min-height: 100svh; display: grid; grid-template-columns: 46% 54%; }
+.login-story { background: #172b46; color: #fff; padding: 46px 56px 30px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.login-story::after { content: ''; position: absolute; width: 420px; height: 420px; border: 1px solid #ffffff14; border-radius: 50%; right: -180px; bottom: 60px; box-shadow: 0 0 0 60px #ffffff04, 0 0 0 120px #ffffff03; pointer-events: none; }
+.story-content { margin: auto 0; padding: 80px 0; position: relative; z-index: 1; }
+.eyebrow { color: #94add2; font-size: 11px; letter-spacing: 4px; margin-bottom: 25px; }
+.story-content h1 { font-size: clamp(38px, 4vw, 58px); line-height: 1.45; font-weight: 500; letter-spacing: 4px; margin: 0 0 25px; }
+.story-description { color: #adbdcf; font-size: 14px; line-height: 2; }
+.story-footer { color: #97a9c1; font-size: 12px; letter-spacing: 2px; }
+.login-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 64px 40px 28px; background: #fff; }
+.login-form-wrap { width: min(100%, 370px); margin: auto 0; }
+.login-form-wrap h2 { font-size: 32px; font-weight: 600; margin: 15px 0 10px; letter-spacing: 1px; }
+.login-intro { font-size: 14px; margin-bottom: 38px; }
+.field { margin-bottom: 24px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 10px; }
+.field .el-input__wrapper { min-height: 48px; background: #fbfcfe; }
+.login-submit { width: 100%; min-height: 48px; margin-top: 9px; }
+.identity-retry { width: 100%; margin: 12px 0 0 !important; }
+.form-error { padding: 12px 14px; border-radius: 8px; font-size: 13px; background: #fff3f1; color: #b24338; line-height: 1.7; }
+.login-footer { margin: 50px 0 0; font-size: 11px; color: #9ba4b1; }
+.workspace { min-height: 100svh; display: flex; }
+.sidebar { width: 232px; flex-shrink: 0; background: #172b46; color: #dae4f1; padding: 31px 21px 24px; display: flex; flex-direction: column; min-height: 100svh; }
+.sidebar .wordmark { margin: 0 7px 58px; color: #fff; white-space: nowrap; }
+.sidebar-label { color: #8399b5; font-size: 11px; padding: 0 17px; margin-bottom: 15px; letter-spacing: 2px; }
+.sidebar nav { display: grid; gap: 7px; }
+.sidebar nav a { display: flex; align-items: center; gap: 13px; padding: 15px 17px; border-radius: 8px; font-size: 14px; }
+.sidebar nav a:hover { background: #ffffff0a; }
+.sidebar nav a.is-active { background: #2c4669; color: #fff; }
+.nav-dot { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 2px; }
+.sidebar-bottom { margin-top: auto; padding: 35px 16px 0; font-size: 12px; color: #9eb1cb; }
+.status-dot { display: inline-block; width: 6px; height: 6px; background: #60a68f; border-radius: 50%; margin-right: 7px; }
+.workspace-main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.topbar { min-height: 81px; padding: 18px 42px; background: #fff; border-bottom: 1px solid #e9edf3; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.breadcrumb { font-size: 12px; color: #6a7a90; }
+.breadcrumb span { color: #c5ccd7; margin: 0 13px; }
+.account-actions { display: flex; align-items: center; gap: 11px; }
+.avatar { height: 31px; width: 31px; display: grid; place-items: center; background: #edf1f9; color: #4e6691; border-radius: 50%; font-size: 12px; font-weight: 600; }
+.account-name { font-size: 12px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.account-actions .el-button { color: #69778d; font-size: 12px; margin-left: 10px; }
+.page-content { width: 100%; max-width: 1200px; margin: 0 auto; padding: 47px 48px; flex: 1; }
+.page-content > .el-alert { margin-bottom: 25px; }
+.page-title { font-size: 29px; letter-spacing: .3px; font-weight: 600; margin: 13px 0 12px; overflow-wrap: anywhere; }
+.page-description { font-size: 14px; color: #7b879a; line-height: 1.8; margin-bottom: 35px; }
+.account-card { background: #fff; border: 1px solid #e4e9f0; border-radius: 12px; max-width: 760px; overflow: hidden; }
+.card-heading { padding: 23px 30px; display: flex; align-items: center; justify-content: space-between; gap: 15px; border-bottom: 1px solid #edf0f5; }
+.card-heading h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.connection-badge { color: #558976; font-size: 11px; }
+.role-badge { background: #eef2fa; color: #5371a5; padding: 5px 8px; border-radius: 5px; font-size: 10px; letter-spacing: 1px; }
+.account-details { padding: 8px 30px; margin: 0; }
+.account-details > div { padding: 23px 0; display: grid; grid-template-columns: 135px 1fr; border-bottom: 1px solid #f0f2f5; gap: 20px; }
+.account-details > div:last-child { border: 0; }
+.account-details dt { color: #8490a2; font-size: 13px; }
+.account-details dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.card-action { padding: 20px 30px; border-top: 1px solid #edf0f5; }
+.text-link { color: #345cbb; font-size: 13px; }
+.text-link span { margin-left: 8px; }
+.workspace-footer { padding: 0 48px 23px; color: #9ba4b2; font-size: 11px; }
+.workspace-footer span { margin: 0 8px; }
+.message-page h1 { font-size: 28px; font-weight: 600; line-height: 1.5; }
+.message-page .muted { font-size: 14px; margin: 18px 0 30px; }
+.standalone-message { max-width: 700px; margin: 16svh auto; padding: 35px; }
+.button-link { display: inline-block; padding: 12px 22px; background: #345cbb; color: #fff; border-radius: 8px; font-size: 14px; }
+.connection-inline { padding: 30px 0; color: #69778d; }
+.loading-copy { color: #7b879a; font-size: 14px; }
+.menu-toggle { display: none; border: 0; background: transparent; color: #26374b; font-size: 21px; padding: 5px; cursor: pointer; }
+.menu-scrim { position: fixed; inset: 0; background: #172b466b; border: 0; z-index: 4; }
+@media (max-width: 900px) {
+  .login-story { padding: 35px 30px 25px; }
+  .sidebar { width: 207px; padding-inline: 15px; }
+  .topbar { padding-inline: 25px; }
+  .page-content { padding: 35px 26px; }
+}
+@media (max-width: 640px) {
+  .login-page { display: flex; flex-direction: column; background: #fff; }
+  .login-story { padding: 26px 27px; min-height: 215px; }
+  .story-content { padding: 26px 0 0; }
+  .story-content h1 { font-size: 28px; letter-spacing: 2px; margin: 0; }
+  .story-content h1 br { display: none; }
+  .story-description, .story-footer, .eyebrow { display: none; }
+  .login-panel { flex: 1; padding: 38px 27px 25px; justify-content: flex-start; }
+  .login-form-wrap { margin: 0; }
+  .login-form-wrap h2 { font-size: 27px; }
+  .login-intro { margin-bottom: 30px; }
+  .login-footer { margin-top: 40px; }
+  .sidebar { position: fixed; z-index: 5; top: 0; bottom: 0; left: 0; transform: translateX(-100%); transition: transform .18s; width: 235px; visibility: hidden; }
+  .sidebar.is-open { transform: translateX(0); visibility: visible; }
+  .menu-toggle { display: block; }
+  .topbar { min-height: 70px; padding: 13px 18px; gap: 8px; }
+  .breadcrumb { display: none; }
+  .account-actions { gap: 7px; }
+  .account-name { max-width: 105px; }
+  .account-actions .el-button { margin-left: 0; }
+  .page-content { padding: 30px 20px; }
+  .page-title { font-size: 25px; }
+  .card-heading { padding: 21px; }
+  .account-details { padding: 0 21px; }
+  .account-details > div { grid-template-columns: 83px 1fr; gap: 15px; }
+  .card-action { padding: 19px 21px; }
+  .workspace-footer { padding: 0 20px 22px; }
+}

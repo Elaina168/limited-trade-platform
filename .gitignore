@@ -1,5 +1,8 @@
 # 构建产物与本机编辑器配置
 target/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
 tools/
 .idea/
 *.iml
