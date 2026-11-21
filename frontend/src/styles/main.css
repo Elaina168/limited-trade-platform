@@ -121,3 +121,68 @@ a:focus-visible, button:focus-visible { outline: 3px solid #9eb8ef; outline-offs
   .card-action { padding: 19px 21px; }
   .workspace-footer { padding: 0 20px 22px; }
 }
+
+/* 商品、活动与注册共用现有集市配色。 */
+.register-card { margin-top: 30px; padding: 28px; border: 1px solid #e4e9f0; border-radius: 12px; background: #fff; }
+.register-card h1 { font-size: 25px; margin-bottom: 28px; }
+.register-card .text-link { display: inline-block; margin: 18px; }
+.filter-bar { display: flex; gap: 12px; margin-bottom: 25px; }
+.filter-bar .el-input { flex: 1; }
+.filter-bar select { max-width: 180px; min-width: 110px; border: 1px solid #dcdfe6; border-radius: 5px; padding: 8px; background: #fff; color: #26374b; }
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 20px; }
+.market-card { min-width: 0; padding: 25px; background: #fff; border: 1px solid #e4e9f0; border-radius: 12px; overflow-wrap: anywhere; }
+.market-card h2 { font-size: 18px; margin: 15px 0; }
+.market-card .muted { font-size: 13px; line-height: 1.8; }
+.product-mark { height: 105px; display: grid; place-items: center; background: #edf2f9; color: #657fa5; font-size: 36px; border-radius: 8px; margin-bottom: 22px; }
+.price { font-size: 23px; color: #345cbb; font-weight: 600; }
+.pagination, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 28px 0; font-size: 13px; }
+.section-heading h2 { font-size: 20px; }
+.empty-state { padding: 35px 20px; text-align: center; color: #7b879a; }
+.event-summary { margin-top: 25px; }
+.operation-notice { padding: 14px; background: #edf2f9; border-radius: 8px; line-height: 1.7; }
+@media (max-width: 640px) {
+  .filter-bar { flex-wrap: wrap; }
+  .filter-bar .el-input { flex-basis: 100%; }
+  .filter-bar select { flex: 1; max-width: none; }
+  .register-card { padding: 22px 16px; }
+}
+
+/* 第三阶段：地址、购物车与结算。 */
+.business-fields, .purchase-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.business-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.business-fields input, .purchase-fields input, .purchase-fields select, .checkout-summary select, .quantity-input { width: 100%; min-width: 0; padding: 10px; border: 1px solid #dcdfe6; border-radius: 6px; background: #fff; color: #26374b; font: inherit; font-size: 14px; }
+.business-fields input:disabled, .purchase-fields :disabled, .quantity-input:disabled { background: #f3f5f8; color: #8b96a5; }
+.business-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
+.business-actions .el-button + .el-button { margin-left: 0; }
+.address-editor { margin-top: 30px; }
+.cart-row { display: flex; align-items: center; gap: 18px; margin-top: 20px; }
+.cart-row > input[type=checkbox] { flex-shrink: 0; width: 18px; height: 18px; }
+.cart-item-info { flex: 1; min-width: 0; }
+.cart-row h2 { margin: 0 0 10px; }
+.cart-row .quantity-input { width: 90px; }
+.cart-row .business-actions { margin-top: 0; }
+.checkout-summary, .purchase-form, .order-result { margin-top: 25px; }
+.checkout-summary select { display: block; margin: 12px 0; }
+.purchase-form { max-width: 760px; }
+.purchase-fields { margin-top: 30px; }
+.pending-purchase { padding: 22px; border: 1px solid #e5c898; background: #fff9ed; border-radius: 10px; margin-bottom: 28px; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; }
+.order-result { line-height: 1.9; }
+.order-items { padding-left: 20px; }
+@media (max-width: 900px) { .cart-row { flex-wrap: wrap; } .cart-row .business-actions { flex-basis: 100%; } }
+@media (max-width: 640px) { .business-fields { grid-template-columns: 1fr; } .cart-row { gap: 12px; } .cart-row .quantity-input { width: 75px; } }
+
+/* 第四阶段：本人订单列表与详情。 */
+.order-list-card { margin-top: 20px; }
+.order-list-card .section-heading, .order-result .section-heading { margin: 0 0 12px; }
+.order-list-card h2, .order-result .section-heading h2 { margin: 0; }
+.order-list-bottom { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: 20px; }
+.order-items li { padding: 10px 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .order-list-bottom { flex-wrap: wrap; } .order-result .section-heading { flex-wrap: wrap; } }
+
+/* 第五阶段：管理表单与较长导航。 */
+.admin-input, .business-fields select { width: 100%; min-width: 0; padding: 10px; border: 1px solid #dcdfe6; border-radius: 6px; background: #fff; color: #26374b; font: inherit; font-size: 14px; }
+.admin-input:disabled, .business-fields select:disabled { background: #f3f5f8; color: #8b96a5; }
+.admin-grid { margin-top: 25px; }
+.filter-bar > .admin-input { flex: 1; }
+.sidebar { overflow-y: auto; }
+@media (max-width: 640px) { .filter-bar > .admin-input { flex-basis: 100%; } }

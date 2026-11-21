@@ -201,3 +201,36 @@ test('late logout confirmation cannot attach its error to a newer login', async 
   assert.deepEqual(auth.user, admin)
   assert.equal(auth.error, '')
 })
+
+test('JSON writes use current CSRF and return the created resource', async () => {
+  const http = await import('../src/api/http.ts')
+  const requests: RequestInit[] = []
+  globalThis.fetch = async (input, options = {}) => {
+    requests.push(options)
+    return String(input).endsWith('/csrf') ? json({ headerName: 'X-CSRF-TOKEN', token: 'fresh' }) : json({ id: 91 }, 201)
+  }
+  const result = await http.postJson<{ id: number }>('/api/auth/register', { username: 'new_user', password: 'password1' })
+  assert.equal(result.id, 91)
+  assert.equal(new Headers(requests[1]!.headers).get('X-CSRF-TOKEN'), 'fresh')
+  assert.equal(new Headers(requests[1]!.headers).get('Content-Type'), 'application/json')
+  assert.equal(JSON.parse(String(requests[1]!.body)).username, 'new_user')
+})
+
+test('account change while JSON write obtains CSRF prevents submission', async () => {
+  const http = await import('../src/api/http.ts')
+  let calls = 0
+  globalThis.fetch = async () => { calls++; advanceSession(); return json({ headerName: 'X-CSRF-TOKEN', token: 'old' }) }
+  await assert.rejects(http.postJson('/api/coupons/1/claim'), SessionChangedError)
+  assert.equal(calls, 1)
+})
+
+
+test('product search encodes literal input and keeps backend pagination names', async () => {
+  const catalog = await import('../src/api/catalog.ts')
+  let requested = ''
+  globalThis.fetch = async input => { requested = String(input); return json({ page: 2, size: 12, total: 13, items: [] }) }
+  await catalog.searchProducts(2, ' 手机 & %_ ', '17')
+  const url = new URL(requested, 'http://localhost')
+  assert.equal(url.pathname, '/api/products/search')
+  assert.deepEqual(Object.fromEntries(url.searchParams), { page: '2', size: '12', keyword: '手机 & %_', categoryId: '17' })
+})

@@ -9,7 +9,7 @@
     "type-check": "vue-tsc --noEmit",
     "build": "npm run type-check && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/auth.test.ts"
+    "test": "node --test tests/*.test.ts"
   },
   "dependencies": {
     "element-plus": "2.14.8",

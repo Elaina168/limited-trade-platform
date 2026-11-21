@@ -8,7 +8,7 @@
 
 已完成[规则RAG检索与评价](learning/34-rule-rag.md)、[MySQL多轮会话](learning/35-agent-conversations.md)、[真实SSE流式输出](learning/36-agent-sse.md)、[交易助手聊天页](learning/37-agent-chat-page.md)与[Agent轻量评估](learning/38-agent-evaluation.md)。首轮12场景14请求，自动约束11场景通过，保留身份伪造场景安全拒绝与预设404不符的失败记录及来源覆盖限制。用户于2026-11-16说明已完成JS、TS、React、Vue和Node学习，已按[前端实施计划](superpowers/plans/2026-11-16-vue-frontend.md)完成第一阶段的基础工程、布局、登录退出、身份恢复和角色路由。开发库014迁移需在对应Agent联调阶段核对。
 
-2026-11-17已交付[Vue前端第一阶段](learning/39-vue-auth-foundation.md)，完成上述身份与布局范围，12项身份回归、类型检查、构建和真实Chrome联调通过。后续先学习本阶段源码，再按计划进入注册、商品与活动。
+2026-11-17已交付[Vue前端第一阶段](learning/39-vue-auth-foundation.md)，完成上述身份与布局范围，12项身份回归、类型检查、构建和真实Chrome联调通过。2026-11-19已交付[Vue前端第二阶段](learning/40-vue-market-browsing.md)：注册、商品分类筛选分页、活动详情与领券，15项前端回归、类型检查、构建及真实浏览器联调通过。2026-11-19继续交付[Vue前端第三阶段](learning/41-vue-cart-checkout.md)：地址、购物车、活动券选择、结算和未知结果恢复；20项前端检查、构建、真实Chrome与测试库验收通过。2026-11-20交付[Vue前端第四阶段](learning/42-vue-order-management.md)：本人订单列表/筛选、完整详情、模拟支付、取消、收货及查询确认未知购买；25项前端检查、构建、真实与生产预览浏览器检查通过。2026-11-21交付[Vue前端第五阶段](learning/43-vue-admin-management.md)：分类、商品上下架、活动与券创建、管理订单筛选和发货，完成管理员与买家收货闭环；30项前端检查、构建和真实/生产预览联调通过。先学习第五阶段源码，之后接通Vue Agent页面。
 
 更新：2026-10-21。用户要求将“最基本的SSM+Redis，消息队列、日志收集、负载均衡网关、容器管理这些Web基本功”中尚未完成的内容纳入后续路线，并补入所提供“Java开发工程师”岗位截图中的技术与工程能力要求。本文记录计划，不代表已经接入或完成部署验收，也不以项目使用过某项技术推断个人已达到岗位熟练程度。
 

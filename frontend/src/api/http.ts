@@ -3,10 +3,12 @@ import type { CsrfToken } from '../types/auth.ts'
 export class HttpError extends Error {
   status: number
   traceId: string | null
-  constructor(status: number, traceId: string | null) {
+  path: string | undefined
+  constructor(status: number, traceId: string | null, path?: string) {
     super(`HTTP ${status}`)
     this.status = status
     this.traceId = traceId
+    this.path = path
   }
 }
 
@@ -39,7 +41,7 @@ async function request(path: string, options: RequestInit, expected: number): Pr
   } catch (error) {
     if (error instanceof TypeError) throw new RequestError('无法连接服务，请检查网络后重试。')
     if (error instanceof DOMException && error.name === 'TimeoutError') {
-      throw new RequestError('请求超时，操作结果尚未确认，请重新读取登录状态。')
+      throw new RequestError('请求超时，操作结果尚未确认，请刷新相关数据后再决定是否重试。')
     }
     throw error
   }
@@ -47,7 +49,7 @@ async function request(path: string, options: RequestInit, expected: number): Pr
   checkSession(expected)
   if (!response.ok) {
     if (response.status === 401 && path !== '/api/auth/me' && path !== '/api/auth/login') unauthorized()
-    throw new HttpError(response.status, response.headers.get('X-Trace-Id'))
+    throw new HttpError(response.status, response.headers.get('X-Trace-Id'), path)
   }
   return response
 }
@@ -75,6 +77,28 @@ export async function postForm(path: string, values: Record<string, string>, exp
   }, expected)
 }
 
+export async function writeJson<T = void>(path: string, method: 'POST' | 'PUT' | 'DELETE' | 'PATCH', values?: unknown, expected = revision): Promise<T> {
+  const csrf = await readJson<CsrfToken>('/api/auth/csrf', expected)
+  const response = await request(path, {
+    method,
+    headers: { [csrf.headerName]: csrf.token, 'Content-Type': 'application/json' },
+    body: values === undefined ? undefined : JSON.stringify(values),
+  }, expected)
+  if (response.status === 204) return undefined as T
+  let body: T
+  try { body = await response.json() as T }
+  catch (error) {
+    if (error instanceof SyntaxError) throw new RequestError('服务返回的数据无法读取，请重新读取操作结果。')
+    throw error
+  }
+  checkSession(expected)
+  return body
+}
+
+export function postJson<T>(path: string, values?: unknown, expected = revision): Promise<T> {
+  return writeJson<T>(path, 'POST', values, expected)
+}
+
 export function errorMessage(error: unknown): string {
   if (error instanceof RequestError) return error.message
   if (!(error instanceof HttpError)) throw error
@@ -83,6 +107,7 @@ export function errorMessage(error: unknown): string {
     401: '登录未通过或会话已过期，请确认账号密码后重新登录。',
     403: '当前操作未获允许，页面凭据可能已过期，请刷新后重试。',
     404: '请求的内容不存在，请返回首页。',
+    409: '当前状态不允许操作，请刷新后检查库存、活动名额或优惠券条件。',
     429: '操作较频繁，请稍后重试。',
     502: '后端服务暂时无法连接，请稍后重试。',
     503: '服务暂时不可用，请稍后重试。',

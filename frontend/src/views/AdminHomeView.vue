@@ -17,5 +17,12 @@ const auth = useAuthStore()
       </dl>
       <div class="card-action"><RouterLink class="text-link" to="/">查看账号信息 <span aria-hidden="true">↗</span></RouterLink></div>
     </div>
+    <div class="market-grid admin-grid">
+      <RouterLink class="market-card" to="/admin/categories"><h2>分类管理 →</h2><p class="muted">新增与重命名分类</p></RouterLink>
+      <RouterLink class="market-card" to="/admin/products"><h2>商品管理 →</h2><p class="muted">商品资料与上下架</p></RouterLink>
+      <RouterLink class="market-card" to="/admin/activities"><h2>活动管理 →</h2><p class="muted">创建限时限量活动</p></RouterLink>
+      <RouterLink class="market-card" to="/admin/coupons"><h2>优惠券管理 →</h2><p class="muted">创建和查看活动券</p></RouterLink>
+      <RouterLink class="market-card" to="/admin/orders"><h2>订单管理 →</h2><p class="muted">查询与登记发货</p></RouterLink>
+    </div>
   </section>
 </template>
