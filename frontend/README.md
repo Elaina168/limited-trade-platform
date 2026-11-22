@@ -72,3 +72,15 @@ main.ts安装Pinia、组件和路由。router/index.ts先调用stores/auth.ts恢
 分类支持新增/重命名；商品新建为下架，支持资料修改和PATCH上下架，编辑不修改库存；活动和券按现有接口只创建与查看。管理订单支持状态/用户筛选、详情和已支付有地址订单的人工物流登记，买家可继续确认收货。
 
 未知写结果先刷新核对，不自动重发。管理员身份/角色变化清空数据和草稿；同账号焦点身份确认保留草稿。源码与验收见docs/learning/43-vue-admin-management.md。
+
+
+## Vue交易助手
+
+第六阶段提供登录后的/agent：POST SSE增量回答、停止、新会话、确认清空、实际规则来源。只按用户保存会话编号，刷新不重载旧消息；断流不自动重发，退出与身份变化停止旧请求。当前42项前端测试通过。详见docs/learning/44-vue-agent-chat.md。
+
+真实DeepSeek/RAG已在测试库联调。开发库已于2026-11-22执行014迁移并核对两张会话表；日常运行仍需启用服务端Agent配置，默认enabled=false未修改。前端不保存模型密钥。
+
+
+## 整体运行与演示
+
+第七阶段已完成真实Java/MySQL/Redis/RabbitMQ业务联调、开发库DeepSeek/RAG、构建预览及390px检查。启动与演示顺序见[本机运行说明](RUNNING.md)，完整证据见仓库docs/learning/45-vue-integration-delivery.md。Vue目前独立运行，不随JAR提供；preview仅用于本机构建检查。

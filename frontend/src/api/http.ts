@@ -21,7 +21,16 @@ let revision = 0
 let unauthorized: () => void = () => {}
 
 export function sessionRevision() { return revision }
-export function advanceSession() { return ++revision }
+const sessionListeners = new Set<() => void>()
+export function onSessionChange(listener: () => void) {
+  sessionListeners.add(listener)
+  return () => { sessionListeners.delete(listener) }
+}
+export function advanceSession() {
+  revision++
+  for (const listener of sessionListeners) listener()
+  return revision
+}
 export function onUnauthorized(handler: () => void) { unauthorized = handler }
 
 function checkSession(expected: number) {
@@ -54,8 +63,8 @@ async function request(path: string, options: RequestInit, expected: number): Pr
   return response
 }
 
-export async function readJson<T>(path: string, expected = revision): Promise<T> {
-  const response = await request(path, {}, expected)
+export async function readJson<T>(path: string, expected = revision, signal?: AbortSignal): Promise<T> {
+  const response = await request(path, { signal }, expected)
   let body: T
   try { body = await response.json() as T }
   catch (error) {
@@ -77,10 +86,10 @@ export async function postForm(path: string, values: Record<string, string>, exp
   }, expected)
 }
 
-export async function writeJson<T = void>(path: string, method: 'POST' | 'PUT' | 'DELETE' | 'PATCH', values?: unknown, expected = revision): Promise<T> {
-  const csrf = await readJson<CsrfToken>('/api/auth/csrf', expected)
+export async function writeJson<T = void>(path: string, method: 'POST' | 'PUT' | 'DELETE' | 'PATCH', values?: unknown, expected = revision, signal?: AbortSignal): Promise<T> {
+  const csrf = await readJson<CsrfToken>('/api/auth/csrf', expected, signal)
   const response = await request(path, {
-    method,
+    method, signal,
     headers: { [csrf.headerName]: csrf.token, 'Content-Type': 'application/json' },
     body: values === undefined ? undefined : JSON.stringify(values),
   }, expected)
@@ -95,8 +104,17 @@ export async function writeJson<T = void>(path: string, method: 'POST' | 'PUT' |
   return body
 }
 
-export function postJson<T>(path: string, values?: unknown, expected = revision): Promise<T> {
-  return writeJson<T>(path, 'POST', values, expected)
+export function postJson<T>(path: string, values?: unknown, expected = revision, signal?: AbortSignal): Promise<T> {
+  return writeJson<T>(path, 'POST', values, expected, signal)
+}
+
+export async function postEventStream(path: string, values: unknown, signal: AbortSignal, expected = revision) {
+  const csrf = await readJson<CsrfToken>('/api/auth/csrf', expected, signal)
+  return request(path, {
+    method: 'POST', signal,
+    headers: { [csrf.headerName]: csrf.token, 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(values),
+  }, expected)
 }
 
 export function errorMessage(error: unknown): string {

@@ -564,3 +564,10 @@ Spring Cloud明确列为后续专项，先在独立小实验中学习；是否�
 用户订单已补齐分页与状态筛选，沿用管理员分页结构，用户页面与相关调用方同步调整。152项关联后端测试及4组浏览器契约场景通过；请求示例、返回结构变化及验证边界见[用户订单分页](docs/learning/30-user-order-pagination.md)。MongoDB按用户要求暂时跳过；OpenAPI在线文档现已接入，见[接口文档说明](docs/learning/31-openapi.md)。
 
 消息运维增强已提供管理员只读快照`GET /api/admin/operations/order-messages`、定时结构化采样、12个Grafana面板及2条本机告警。19项关联测试通过，真实MQ修复重投后的监控恢复及受控样本的实际告警触发/恢复分别验证；指标口径与处理顺序见[消息监控和故障处理](docs/learning/32-message-operations.md)。未接入外部通知或自动生产重投。
+
+
+## 2026-11-22：Vue前端完整业务联调
+
+前端七阶段已完成本机交付验收，覆盖买家购物/订单、管理员维护/发货、开发库Agent/RAG流式问答；42项前端测试、类型检查、构建及实际浏览器检查通过。开发库014已迁移，原有数据在验收后核对保留。Java此次仅重新打包，未全量执行Java测试。
+
+启动与演示见[Vue本机运行说明](frontend/RUNNING.md)，分层证据与限制见[第七阶段记录](docs/learning/45-vue-integration-delivery.md)。Vue由独立Vite服务提供，Java根路径仍为旧页面；没有进行Docker或正式部署。

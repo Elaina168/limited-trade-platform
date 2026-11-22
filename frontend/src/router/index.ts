@@ -15,6 +15,7 @@ export const router = createRouter({
     {
       path: '/', component: AppLayout,
       children: [
+        { path: 'agent', name: 'agent', component: () => import('../views/AgentChatView.vue'), meta: { title: '交易助手', requiresAuth: true } },
         { path: 'admin/categories', name: 'admin-categories', component: () => import('../views/AdminCategoriesView.vue'), meta: { title: '分类管理', requiresAuth: true, requiresAdmin: true } },
         { path: 'admin/products', name: 'admin-products', component: () => import('../views/AdminProductsView.vue'), meta: { title: '商品管理', requiresAuth: true, requiresAdmin: true } },
         { path: 'admin/activities', name: 'admin-activities', component: () => import('../views/AdminActivitiesView.vue'), meta: { title: '活动管理', requiresAuth: true, requiresAdmin: true } },

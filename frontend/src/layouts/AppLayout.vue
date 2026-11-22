@@ -18,6 +18,7 @@ const menuOpen = ref(false)
         <RouterLink to="/products" active-class="is-active"><span class="nav-dot"></span>商品浏览</RouterLink>
         <RouterLink to="/activities" active-class="is-active"><span class="nav-dot"></span>限量活动</RouterLink>
         <RouterLink v-if="auth.user" to="/" exact-active-class="is-active"><span class="nav-dot"></span>账号概览</RouterLink>
+        <RouterLink v-if="auth.user" to="/agent" active-class="is-active"><span class="nav-dot"></span>交易助手</RouterLink>
         <RouterLink v-if="auth.user" to="/orders" active-class="is-active"><span class="nav-dot"></span>我的订单</RouterLink>
         <RouterLink v-if="auth.user" to="/cart" active-class="is-active"><span class="nav-dot"></span>购物车</RouterLink>
         <RouterLink v-if="auth.user" to="/addresses" active-class="is-active"><span class="nav-dot"></span>收货地址</RouterLink>
