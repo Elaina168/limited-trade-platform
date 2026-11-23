@@ -1,0 +1,15 @@
+**
+!docker/
+!docker/nginx/
+!docker/nginx/Dockerfile
+!docker/nginx/nginx.conf
+!frontend/
+!frontend/dist/
+!frontend/dist/**
+!deploy/
+!deploy/nginx/
+!deploy/nginx/http-common.conf
+!deploy/nginx-vue/
+!deploy/nginx-vue/api-proxy.conf
+!deploy/nginx-vue/vue-http.conf
+!deploy/nginx-vue/vue-server.conf

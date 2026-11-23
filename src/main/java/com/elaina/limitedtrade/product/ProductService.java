@@ -23,13 +23,15 @@ public class ProductService {
     }
 
     public List<Product> listOnSaleProducts() {
-        List<Product> cached = productCache.get();
-        if (cached != null) {
-            return cached;
+        return productCache.getOrLoad(productMapper::findOnSaleProducts);
+    }
+
+    public Product getOnSaleProduct(long id) {
+        Product product = productCache.findProduct(id, () -> productMapper.findById(id));
+        if (product == null || !"ON_SALE".equals(product.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在或当前已下架");
         }
-        List<Product> products = productMapper.findOnSaleProducts();
-        productCache.put(products);
-        return products;
+        return product;
     }
 
     public List<Product> listAdminProducts() {
@@ -64,7 +66,7 @@ public class ProductService {
         if (productMapper.updateStatus(id, request.status()) == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在");
         }
-        productCache.evictAfterCommit();
+        productCache.evictAfterCommit("ON_SALE".equals(request.status()) ? id : null);
         return productMapper.findById(id);
     }
 

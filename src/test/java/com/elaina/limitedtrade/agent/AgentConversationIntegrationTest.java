@@ -144,6 +144,73 @@ class AgentConversationIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT messages_json FROM agent_conversation_turn WHERE conversation_id=?", String.class, id)).isEqualTo("broken-json");
     }
 
+    @Test void listAndHistoryOnlyExposeOwnedActiveConversationsAndReadsDoNotRenewExpiry() {
+        var first = service.create(userId).conversationId();
+        var second = service.create(userId).conversationId();
+        jdbc.update("UPDATE agent_conversation SET expires_at=DATE_ADD(NOW(),INTERVAL 2 HOUR) WHERE id=?", first);
+        var expired = service.create(userId).conversationId();
+        jdbc.update("UPDATE agent_conversation SET expires_at=DATE_SUB(NOW(),INTERVAL 1 SECOND) WHERE id=?", expired);
+        var other = service.create(otherId).conversationId();
+
+        var page = service.list(userId, 1, 1);
+        assertThat(page.items()).extracting(AgentConversationService.CreatedConversation::conversationId).containsExactly(second);
+        assertThat(page.hasNext()).isTrue();
+        var next = service.list(userId, 2, 1);
+        assertThat(next.items()).extracting(AgentConversationService.CreatedConversation::conversationId).containsExactly(first);
+        assertThat(next.hasNext()).isFalse();
+        assertThat(service.readHistory(userId, first).expiresAt()).isEqualTo(next.items().getFirst().expiresAt());
+        assertThat(service.readHistory(userId, first).turns()).isEmpty();
+        assertStatus(404, () -> service.readHistory(userId, expired));
+        assertStatus(404, () -> service.readHistory(userId, other));
+        assertStatus(404, () -> service.delete(userId, other));
+    }
+
+    @Test void visibleHistoryRetainsFiftyCompletedTurnsIndependentlyFromModelContext() {
+        var id = service.create(userId).conversationId();
+        for (int i = 0; i < 52; i++) service.chat(userId, id, "问题" + i);
+        var turns = service.readHistory(userId, id).turns();
+        assertThat(turns).hasSize(50);
+        assertThat(turns.getFirst().question()).isEqualTo("问题2");
+        assertThat(turns.getLast().question()).isEqualTo("问题51");
+        verify(agent).chatTurn(eq(userId), eq("问题51"), argThat(context -> context.size() == 12));
+        when(agent.chatTurn(eq(userId), eq("带来源"), anyList())).thenReturn(new AgentTurn(
+                new AgentChatResponse("最终回答", java.time.LocalDateTime.now(), List.of("内部工具"),
+                        List.of(new TradeRule("公开规则", "规则", "公开文档")), 2, 1, 2L, 9, List.of()),
+                List.of(new UserMessage("带来源"), new AssistantMessage("内部文本"),
+                        new AssistantMessage("最终回答"))));
+        service.chat(userId, id, "带来源");
+        var visible = service.readHistory(userId, id).turns().getLast();
+        assertThat(visible.answer()).isEqualTo("最终回答");
+        assertThat(visible.sources()).extracting(TradeRule::id).containsExactly("公开规则");
+    }
+
+    @Test void historyReadsCommittedSnapshotAndClearOrDeleteInvalidatesPendingGeneration() {
+        var id = service.create(userId).conversationId();
+        service.chat(userId, id, "已提交");
+        when(agent.chatTurn(eq(userId), eq("清空中"), anyList())).thenAnswer(call -> {
+            var before = service.readHistory(userId, id);
+            assertThat(before.generating()).isTrue();
+            assertThat(before.turns()).extracting(AgentConversationService.VisibleTurn::question).containsExactly("已提交");
+            service.clear(userId, id);
+            return new AgentTurn(new AgentChatResponse("旧答", java.time.LocalDateTime.now(), List.of(), List.of(), 1, 0, 1L, 1, List.of()),
+                    List.of(new UserMessage("清空中"), new AssistantMessage("旧答")));
+        });
+        assertStatus(409, () -> service.chat(userId, id, "清空中"));
+        assertThat(service.readHistory(userId, id).turns()).isEmpty();
+        service.chat(userId, id, "待删除");
+        var prepared = service.prepare(userId, id, "删除中");
+        service.delete(userId, id);
+        var stream = new AgentStream(event -> { });
+        when(agent.chatTurnStream(eq(userId), eq("删除中"), anyList(), eq(stream))).thenReturn(new AgentTurn(
+                new AgentChatResponse("旧答", java.time.LocalDateTime.now(), List.of(), List.of(), 1, 0, 1L, 1, List.of()),
+                List.of(new UserMessage("删除中"), new AssistantMessage("旧答"))));
+        assertStatus(404, () -> service.stream(prepared, stream));
+        assertStatus(404, () -> service.readHistory(userId, id));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_conversation_visible_turn WHERE conversation_id=?", Integer.class, id)).isZero();
+        for (int i = 0; i < 10; i++) service.create(userId);
+        assertStatus(409, () -> service.create(userId));
+    }
+
     private static void assertStatus(int status, Runnable action) {
         assertThatThrownBy(action::run).isInstanceOfSatisfying(ResponseStatusException.class,
                 error -> assertThat(error.getStatusCode().value()).isEqualTo(status));

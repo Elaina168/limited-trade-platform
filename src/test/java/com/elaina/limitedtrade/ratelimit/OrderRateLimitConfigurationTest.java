@@ -16,12 +16,17 @@ class OrderRateLimitConfigurationTest {
         runner.run(context->{assertThat(context).hasNotFailed();assertThat(context).hasSingleBean(OrderRateLimitProperties.class);});
     }
 
+    @Test void tokenBucketModeBindsAtStartup() {
+        runner.withPropertyValues("app.order-rate-limit.algorithm=token-bucket")
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
     @ParameterizedTest @ValueSource(strings={
             "app.order-rate-limit.max-requests=0","app.order-rate-limit.max-requests=-1",
             "app.order-rate-limit.window-seconds=0","app.order-rate-limit.window-seconds=-1",
             "app.order-rate-limit.key-prefix=","app.order-rate-limit.key-prefix=\u3000",
             "app.order-rate-limit.key-prefix=invalid prefix","app.order-rate-limit.max-requests=2147483648",
-            "app.order-rate-limit.max-request=3"})
+            "app.order-rate-limit.max-request=3", "app.order-rate-limit.algorithm=typo"})
     void invalidOrMisspelledConfigurationStopsStartup(String invalid){
         runner.withPropertyValues(invalid).run(context->assertThat(context).hasFailed());
     }

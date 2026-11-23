@@ -9,6 +9,7 @@ export function searchProducts(page: number, keyword: string, categoryId: string
   return readJson<ProductPage>(`/api/products/search?${query}`)
 }
 export const products = () => readJson<Product[]>('/api/products')
+export const productById = (id: number) => readJson<Product>(`/api/products/${id}`)
 export const activities = () => readJson<Activity[]>('/api/activities')
 export const activity = (id: number) => readJson<Activity>(`/api/activities/${id}`)
 export const activityCoupons = (id: number) => readJson<ActivityCoupon[]>(`/api/activities/${id}/coupons`)

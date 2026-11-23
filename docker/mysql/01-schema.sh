@@ -18,6 +18,8 @@ for script in \
     012_order_shipment.sql \
     013_activity_coupon.sql \
     014_agent_conversation.sql \
+    015_agent_conversation_visible_history.sql \
+    016_agent_usage_budget.sql \
     seed.sql \
     demo_catalog.sql
 do

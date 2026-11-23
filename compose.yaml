@@ -7,8 +7,27 @@ x-logging: &container-logging
     max-file: "3"
 
 services:
+  web:
+    image: ${COMPOSE_PROJECT_NAME:-limited-trade-containers}-web:local
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CONTAINER_WEB_PORT:-18084}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1/nginx-health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      app:
+        condition: service_healthy
+    logging: *container-logging
+
   app:
-    image: limited-trade-platform:local
+    image: ${COMPOSE_PROJECT_NAME:-limited-trade-containers}-app:local
     pull_policy: never
     build:
       context: .
@@ -19,17 +38,15 @@ services:
       SPRING_DATA_REDIS_PORT: "6379"
       APP_INSTANCE_ID: container-app
       JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Shanghai -XX:MaxRAMPercentage=75.0"
-    ports:
-      - "127.0.0.1:18080:8080"
     volumes:
       - type: bind
-        source: ./config/container/db.properties
+        source: ${CONTAINER_CONFIG_DIR:-./config/container}/db.properties
         target: /app/config/db.properties
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ./config/container/rabbitmq.properties
+        source: ${CONTAINER_CONFIG_DIR:-./config/container}/rabbitmq.properties
         target: /app/config/rabbitmq.properties
         read_only: true
         bind:
@@ -69,7 +86,7 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --host=127.0.0.1 --user=limited_trade --database=limited_trade_platform --batch --skip-column-names --execute='SELECT COUNT(*) FROM activity_coupon'"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --host=127.0.0.1 --user=limited_trade --database=limited_trade_platform --batch --skip-column-names --execute='SELECT 1 FROM activity_coupon LIMIT 0; SELECT 1 FROM agent_conversation LIMIT 0; SELECT 1 FROM agent_conversation_turn LIMIT 0'"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -99,7 +116,7 @@ services:
       RABBITMQ_DEFAULT_VHOST: limited-trade
       TZ: Asia/Shanghai
     ports:
-      - "127.0.0.1:15673:15672"
+      - "127.0.0.1:${CONTAINER_RABBITMQ_PORT:-15673}:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:

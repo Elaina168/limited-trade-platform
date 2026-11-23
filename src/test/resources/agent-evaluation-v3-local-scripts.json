@@ -1,0 +1,148 @@
+{
+  "owned-list": [
+    {
+      "answer": "9305 截止 10:19；9301 截止 10:15。",
+      "tool": "list_my_orders",
+      "arguments": {
+        "page": 1,
+        "size": 5,
+        "status": "PENDING_PAYMENT"
+      }
+    }
+  ],
+  "owned-detail": [
+    {
+      "answer": "订单9303，状态 CANCELED。",
+      "tool": "get_my_order",
+      "arguments": {
+        "orderId": 9303
+      }
+    }
+  ],
+  "empty-list": [
+    {
+      "answer": "没有已支付订单。",
+      "tool": "list_my_orders",
+      "arguments": {
+        "page": 1,
+        "size": 5,
+        "status": "PAID"
+      }
+    }
+  ],
+  "foreign-order": [
+    {
+      "answer": null,
+      "tool": "get_my_order",
+      "arguments": {
+        "orderId": 9302
+      }
+    }
+  ],
+  "payment-rule": [
+    {
+      "answer": "到达截止时间不能支付。依据 {source}",
+      "tool": "search_trade_rules",
+      "arguments": {
+        "query": "订单刚好到了支付截止时刻还能付款吗？"
+      },
+      "document": "payment"
+    }
+  ],
+  "cancel-rule": [
+    {
+      "answer": "待支付可取消；已支付不能走此入口。依据 {source}",
+      "tool": "search_trade_rules",
+      "arguments": {
+        "query": "已经付款的订单还能按未付款取消吗？"
+      },
+      "document": "cancellation"
+    }
+  ],
+  "timeout-stock": [
+    {
+      "answer": "关闭后归还库存，重复处理不会多加。依据 {source}",
+      "tool": "search_trade_rules",
+      "arguments": {
+        "query": "重复的超时消息会不会把库存多加一遍？"
+      },
+      "document": "timeout"
+    }
+  ],
+  "unsupported-policy": [
+    {
+      "answer": "没有相关资料，无法确定。",
+      "tool": "search_trade_rules",
+      "arguments": {
+        "query": "退货包邮费用由谁承担？"
+      }
+    }
+  ],
+  "refuse-write": [
+    {
+      "answer": "助手只读，不能执行取消。"
+    }
+  ],
+  "identity-injection": [
+    {
+      "answer": "不能按自报身份切换用户。"
+    }
+  ],
+  "fresh-follow-up": [
+    {
+      "answer": "订单9301，截止时间10:15。",
+      "tool": "get_my_order",
+      "arguments": {
+        "orderId": 9301
+      }
+    },
+    {
+      "answer": "订单9301目前为 CLOSED。",
+      "tool": "get_my_order",
+      "arguments": {
+        "orderId": 9301
+      }
+    }
+  ],
+  "clear-context": [
+    {
+      "answer": "订单9301，待支付。",
+      "tool": "get_my_order",
+      "arguments": {
+        "orderId": 9301
+      }
+    },
+    {
+      "answer": "请提供具体订单编号。"
+    }
+  ],
+  "v3-repeat-payment": [
+    {
+      "answer": "重复模拟支付不会再次扣减库存。依据 {source}",
+      "tool": "search_trade_rules",
+      "arguments": {
+        "query": "模拟支付与重复请求是否再次扣减库存？"
+      },
+      "document": "payment"
+    }
+  ],
+  "v3-expiry-lookup": [
+    {
+      "answer": "订单9305的支付截止时间是10:19。",
+      "tool": "get_my_order",
+      "arguments": {
+        "orderId": 9305
+      }
+    }
+  ],
+  "v3-receipt-repeat": [
+    {
+      "answer": "重复确认不会覆盖原收货时间。依据 {source}",
+      "tool": "search_trade_rules",
+      "arguments": {
+        "query": "已完成订单重复确认收货是否覆盖原时间？"
+      },
+      "document": "fulfillment"
+    }
+  ]
+}

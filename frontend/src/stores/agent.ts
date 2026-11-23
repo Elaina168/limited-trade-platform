@@ -1,17 +1,20 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from './auth.ts'
-import { clearConversation, createConversation, streamMessage } from '../api/agent.ts'
+import { clearConversation, createConversation, deleteConversation, listConversations, readConversation, streamMessage } from '../api/agent.ts'
 import { errorMessage, HttpError, onSessionChange, RequestError, SessionChangedError } from '../api/http.ts'
 import { AgentStreamError } from '../utils/agentStream.ts'
-import type { ChatMessage } from '../types/agent.ts'
+import type { ChatMessage, ConversationHistory, CreatedConversation } from '../types/agent.ts'
 
 export const useAgentStore = defineStore('agent', () => {
   const auth = useAuthStore()
   const conversationId = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
+  const conversations = ref<CreatedConversation[]>([])
+  const page = ref(1)
+  const hasNext = ref(false)
   const busy = ref(false)
-  const action = ref<'send' | 'new' | 'clear' | null>(null)
+  const action = ref<'send' | 'history' | 'new' | 'clear' | 'delete' | null>(null)
   const notice = ref('')
   const error = ref('')
   const canSend = computed(() => auth.status === 'authenticated' && !busy.value)
@@ -31,28 +34,97 @@ export const useAgentStore = defineStore('agent', () => {
     }
     conversationId.value = id
   }
-  function restore() {
-    conversationId.value = auth.user ? sessionStorage.getItem(key(auth.user.id)) : null
-    notice.value = conversationId.value ? '已接续上次会话，旧消息未在当前页面重新加载；可以清空历史后重新开始。' : '发送问题后会自动建立会话。'
-  }
   function interrupt() {
     generation++; controller?.abort(); controller = null; busy.value = false; action.value = null
     const last = messages.value.at(-1)
     if (last?.role === 'assistant' && last.state !== 'complete') { last.state = 'stopped'; last.result = undefined }
   }
-  const unsubscribe = onSessionChange(() => {
-    interrupt(); messages.value = []; conversationId.value = null; error.value = ''; notice.value = '身份状态已变化，旧请求已停止。'
+  function resetIdentity() {
+    interrupt()
+    messages.value = []; conversations.value = []; conversationId.value = null
+    page.value = 1; hasNext.value = false; error.value = ''; notice.value = ''
+  }
+  const unsubscribe = onSessionChange(resetIdentity)
+  watch([() => auth.user?.id, () => auth.user?.role], resetIdentity, { flush: 'sync' })
+  let active = false
+  watch(() => auth.status, status => {
+    if (active && status === 'authenticated') void browse()
   })
-  watch([() => auth.user?.id, () => auth.user?.role], () => { interrupt(); messages.value = []; error.value = ''; restore() }, { immediate: true, flush: 'sync' })
-  watch(() => auth.status, status => { if (status === 'authenticated' && !conversationId.value) restore() })
   function failure(cause: unknown, creating = false) {
     const code = cause instanceof HttpError ? cause.status : cause instanceof AgentStreamError ? cause.code : null
     if (code === 404) return creating ? '交易助手当前不可用，请稍后重试。' : '会话已过期或不可访问，请新建会话后继续。'
-    if (code === 409) return creating ? '未过期会话数量已达上限，可清空当前会话继续使用，或稍后再试。' : '会话正在处理其他请求或已发生变化，请稍后手动操作。'
+    if (code === 409) return creating ? '未过期会话数量已达上限，请继续现有会话或删除一个会话。' : '会话正在处理其他请求或已发生变化，请稍后手动操作。'
+    if (code === 413) return '问题和当轮查询结果超出助手上下文额度，请缩小问题范围。'
+    if (code === 429) return '助手提问、并发或本月费用额度已满，请稍后查看。'
     if (code === 502 || code === 504 || cause instanceof DOMException && cause.name === 'TimeoutError') return '助手未能在等待时间内完成，回答是否保存尚未确认，请勿自动重复发送。'
     return errorMessage(cause)
   }
   function unavailable(cause: unknown) { return cause instanceof HttpError && cause.status === 404 || cause instanceof AgentStreamError && cause.code === 404 }
+  async function refreshPage(number: number, signal: AbortSignal, current: number) {
+    const result = await listConversations(number, signal)
+    if (current === generation) {
+      conversations.value = result.items; page.value = result.page; hasNext.value = result.hasNext
+    }
+    return result.items
+  }
+
+  function showHistory(history: ConversationHistory) {
+    remember(history.conversationId)
+    messages.value = history.turns.flatMap<ChatMessage>(turn => [
+      { id: ++nextId, role: 'user', text: turn.question, state: 'complete' },
+      { id: ++nextId, role: 'assistant', text: turn.answer, state: 'complete', result: turn },
+    ])
+    notice.value = history.generating ? '此会话正在生成，当前显示已保存的问答。' : ''
+  }
+
+  async function browse(requestedPage?: number, selected?: string) {
+    if (!canSend.value) return
+    const current = ++generation
+    controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)])
+    busy.value = true; action.value = 'history'; error.value = ''
+    try {
+      if (requestedPage !== undefined) {
+        await refreshPage(requestedPage, signal, current)
+        return
+      }
+      if (selected) {
+        const history = await readConversation(selected, signal)
+        if (current === generation) showHistory(history)
+        return
+      }
+
+      const items = await refreshPage(1, signal, current)
+      if (current !== generation) return
+      let previous: string | null
+      try { previous = sessionStorage.getItem(key(auth.user!.id)) }
+      catch (cause) {
+        if (cause instanceof DOMException) throw new RequestError('无法读取浏览器保存的会话编号。')
+        throw cause
+      }
+      if (previous) {
+        try {
+          const history = await readConversation(previous, signal)
+          if (current === generation) showHistory(history)
+          return
+        } catch (cause) {
+          if (current !== generation || !unavailable(cause)) throw cause
+          remember(null)
+        }
+      }
+      if (items.length) {
+        const history = await readConversation(items[0]!.conversationId, signal)
+        if (current === generation) showHistory(history)
+      } else {
+        remember(null); messages.value = []; notice.value = '发送问题后会自动建立会话。'
+      }
+    } catch (cause) {
+      if (current === generation && !(cause instanceof SessionChangedError)) error.value = failure(cause)
+    } finally {
+      if (current === generation) { busy.value = false; action.value = null; controller = null }
+    }
+  }
+
   async function send(input: string) {
     if (!canSend.value) return
     const question = input.trim()
@@ -63,7 +135,9 @@ export const useAgentStore = defineStore('agent', () => {
     busy.value = true; action.value = 'send'; error.value = ''; notice.value = '正在准备回答…'
     const user: ChatMessage = { id: ++nextId, role: 'user', text: question, state: 'complete' }
     const row: ChatMessage = { id: ++nextId, role: 'assistant', text: '', state: 'connecting' }
-    messages.value = [...messages.value, user, row].slice(-12)
+    const last = messages.value.at(-1)
+    const saved = last?.state === 'stopped' || last?.state === 'incomplete' ? messages.value.slice(0, -2) : messages.value
+    messages.value = [...saved, user, row]
     // 从响应式数组取得代理，后续增量修改才能驱动视图更新。
     const assistant = messages.value.at(-1)!
     let creating = !conversationId.value
@@ -72,52 +146,86 @@ export const useAgentStore = defineStore('agent', () => {
         const created = await createConversation(signal)
         if (current !== generation) return
         remember(created.conversationId); creating = false
+        // 首轮未完成时，新建的空会话也应出现在列表。
+        if (page.value === 1) {
+          hasNext.value = hasNext.value || conversations.value.length === 5
+          conversations.value = [created, ...conversations.value].slice(0, 5)
+        }
       }
       await streamMessage(conversationId.value!, question, event => {
         if (current !== generation) return
         if (event.type === 'start') { assistant.state = 'streaming'; notice.value = '正在查询并生成回答…' }
         if (event.type === 'delta') { assistant.state = 'streaming'; assistant.text += event.text }
         if (event.type === 'reset') { assistant.text = ''; assistant.state = 'streaming' }
-        if (event.type === 'done') { assistant.text = event.result.answer; assistant.result = event.result; assistant.state = 'complete'; notice.value = '回答已完成并确认保存。' }
+        if (event.type === 'done') {
+          assistant.text = event.result.answer; assistant.result = event.result; assistant.state = 'complete'
+          messages.value = messages.value.slice(-100)
+          notice.value = '回答已完成并确认保存。'
+        }
       }, signal)
+      if (current === generation) await refreshPage(1, signal, current)
     } catch (cause) {
       if (current !== generation || cause instanceof SessionChangedError) return
-      if (assistant.state !== 'complete') {
-        assistant.state = cause instanceof DOMException && cause.name === 'AbortError' ? 'stopped' : 'incomplete'
-        assistant.result = undefined
+      if (assistant.state === 'complete') {
+        error.value = '回答已保存，会话列表刷新失败。'
+        return
       }
-      if (!creating && unavailable(cause)) remember(null)
+      assistant.state = cause instanceof DOMException && cause.name === 'AbortError' ? 'stopped' : 'incomplete'
+      assistant.result = undefined
+      if (!creating && unavailable(cause)) {
+        const missing = conversationId.value
+        remember(null)
+        messages.value = []
+        conversations.value = conversations.value.filter(item => item.conversationId !== missing)
+      }
       error.value = cause instanceof DOMException && cause.name === 'AbortError' ? '' : failure(cause, creating)
       notice.value = '本轮未确认完成，结果可能已保存；请勿自动重复发送，可以新建或清空会话后继续。'
     } finally { if (current === generation) { busy.value = false; action.value = null; controller = null } }
   }
   function stop() { if (canStop.value) { controller?.abort(); notice.value = '正在停止生成…' } }
-  async function change(clearing: boolean) {
-    if (!canSend.value || clearing && !conversationId.value) return
+  async function change(kind: 'new' | 'clear' | 'delete') {
+    if (!canSend.value || kind !== 'new' && !conversationId.value) return
     const current = ++generation
     controller = new AbortController()
-    busy.value = true; action.value = clearing ? 'clear' : 'new'; error.value = ''
-    notice.value = clearing ? '正在清空历史…' : '正在创建会话…'
+    busy.value = true; action.value = kind; error.value = ''
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])
+    let applied = false
     try {
-      if (clearing) await clearConversation(conversationId.value!, signal)
-      else {
+      if (kind === 'new') {
         const created = await createConversation(signal)
         if (current !== generation) return
         remember(created.conversationId)
+      } else if (kind === 'clear') {
+        await clearConversation(conversationId.value!, signal)
+      } else {
+        await deleteConversation(conversationId.value!, signal)
+        if (current !== generation) return
+        remember(null)
       }
       if (current !== generation) return
-      messages.value = []; notice.value = clearing ? '历史已清空，可以重新提问。' : '新会话已就绪。'
+      messages.value = []
+      notice.value = { clear: '历史已清空，可以重新提问。', new: '新会话已就绪。', delete: '会话已删除。请选择会话或直接提问。' }[kind]
+      applied = true
+      await refreshPage(1, signal, current)
     } catch (cause) {
       if (current !== generation || cause instanceof SessionChangedError) return
-      if (clearing && unavailable(cause)) remember(null)
-      error.value = failure(cause, !clearing)
-      notice.value = '操作未确认成功，当前显示的消息保留。'
+      if (applied) {
+        error.value = '操作已保存，会话列表刷新失败。'
+      } else {
+        if (kind !== 'new' && unavailable(cause)) { remember(null); messages.value = [] }
+        error.value = failure(cause, kind === 'new')
+      }
     } finally { if (current === generation) { busy.value = false; action.value = null; controller = null } }
   }
+  function open() { active = true; return browse() }
   function leave() {
+    active = false
     if (busy.value) { interrupt(); notice.value = '已离开并停止请求，未完成回答是否保存尚未确认。' }
   }
   onScopeDispose(() => { unsubscribe(); controller?.abort() })
-  return { conversationId, messages, busy, action, notice, error, canSend, canStop, send, stop, clear: () => change(true), newConversation: () => change(false), leave }
+  return {
+    conversationId, conversations, page, hasNext, messages, busy, action, notice, error, canSend, canStop,
+    open, leave, pageTo: (number: number) => browse(number), select: (id: string) => browse(undefined, id),
+    send, stop, clear: () => change('clear'), newConversation: () => change('new'), remove: () => change('delete'),
+  }
 })

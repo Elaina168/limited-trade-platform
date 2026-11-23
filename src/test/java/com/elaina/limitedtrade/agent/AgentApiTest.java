@@ -50,6 +50,14 @@ class AgentApiTest {
         verify(service).chat(7301L, "查询订单");
     }
 
+    @Test void onlyExistingPlatformRolesCanAccessAgent() throws Exception {
+        var outsideRole = user(new PlatformUserDetails(new AppUser(7301L, "buyer", "unused", "OTHER")));
+        mvc.perform(post("/api/agent/chat").with(csrf()).with(outsideRole).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"查询订单\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(service);
+    }
+
     @Test void blankAndOversizedMessagesAreRejected() throws Exception {
         var principal = user(new PlatformUserDetails(new AppUser(7301L, "buyer", "unused", "USER")));
         mvc.perform(post("/api/agent/chat").with(csrf()).with(principal).contentType(MediaType.APPLICATION_JSON)

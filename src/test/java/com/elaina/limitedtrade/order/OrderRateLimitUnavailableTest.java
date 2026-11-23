@@ -62,7 +62,8 @@ class OrderRateLimitUnavailableTest {
     }
 
     @Test void disablingLimitDoesNotConnectEvenWhenRedisIsUnavailable(){
-        var disabled=new RedisOrderRateLimiter(redis,new OrderRateLimitProperties(false,5,10,"limited-trade:test:disabled"));
+        var disabled=new RedisOrderRateLimiter(redis,new OrderRateLimitProperties(false,5,10,"limited-trade:test:disabled",
+                OrderRateLimitProperties.Algorithm.TOKEN_BUCKET));
         assertDoesNotThrow(()->disabled.check(7101));unchanged();
     }
 

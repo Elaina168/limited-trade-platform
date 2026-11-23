@@ -39,6 +39,10 @@
     </dependencyManagement>
 
     <dependencies>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
         <!-- BGE使用CLS池化，直接调用与Spring AI1.1.8匹配的ONNX和分词器。 -->
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
@@ -133,4 +137,42 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>ci</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <!-- 明确列出离线用例，新增集成或真实模型测试不会自动进入默认 CI。 -->
+                            <includes>
+                                <include>AgentApiTest.java</include>
+                                <include>AgentConfigurationTest.java</include>
+                                <include>AgentConversationApiTest.java</include>
+                                <include>AgentEvaluationTest.java</include>
+                                <include>AgentHistoryTest.java</include>
+                                <include>AgentSseApiTest.java</include>
+                                <include>AgentSseServiceTest.java</include>
+                                <include>AgentToolsTest.java</include>
+                                <include>OrderTimeoutConsumerTest.java</include>
+                                <include>OrderTimeoutSenderTest.java</include>
+                                <include>RuleDocumentsTest.java</include>
+                                <include>TradeAgentProtocolTest.java</include>
+                                <include>TradeAgentStreamTest.java</include>
+                            </includes>
+                            <failIfNoTests>true</failIfNoTests>
+                            <systemPropertyVariables>
+                                <!-- MVC 切片使用显式测试配置，跳过应用的本机配置导入。 -->
+                                <spring.config.location>optional:classpath:/ci-only/</spring.config.location>
+                                <logging.level.org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration>ERROR</logging.level.org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

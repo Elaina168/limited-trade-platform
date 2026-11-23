@@ -3,6 +3,9 @@ package com.elaina.limitedtrade.agent.conversation;
 import com.elaina.limitedtrade.agent.AgentChatResponse;
 import com.elaina.limitedtrade.agent.AgentProperties;
 import com.elaina.limitedtrade.agent.TradeAgentService;
+import com.elaina.limitedtrade.agent.TradeRule;
+import com.elaina.limitedtrade.agent.rag.RuleChunk;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.elaina.limitedtrade.agent.AgentStream;
 import com.elaina.limitedtrade.agent.AgentTurn;
 import com.elaina.limitedtrade.user.AppUserMapper;
@@ -26,6 +29,7 @@ public class AgentConversationService {
     private final TradeAgentService agent;
     private final AgentProperties properties;
     private final AgentHistory history;
+    private final ObjectMapper json;
     private final TransactionTemplate transaction;
 
     public AgentConversationService(AgentConversationMapper mapper, AppUserMapper users, TradeAgentService agent,
@@ -35,6 +39,7 @@ public class AgentConversationService {
         this.agent = agent;
         this.properties = properties;
         this.history = new AgentHistory(json);
+        this.json = json;
         this.transaction = new TransactionTemplate(manager);
     }
 
@@ -52,6 +57,29 @@ public class AgentConversationService {
         });
     }
 
+    public ConversationPage list(long userId, int page, int size) {
+        var found = mapper.listActive(userId, LocalDateTime.now(), (long) (page - 1) * size, size + 1);
+        boolean hasNext = found.size() > size;
+        return new ConversationPage(page, size, hasNext, hasNext ? found.subList(0, size) : found);
+    }
+
+    public ConversationHistory readHistory(long userId, String id) {
+        return transaction.execute(status -> {
+            var now = LocalDateTime.now();
+            var conversation = owned(userId, id, now);
+            // 会话行锁让过期时间、生成状态和已提交历史保持在同一个读取快照。
+            var turns = mapper.findVisibleTurns(id).stream().map(this::decodeVisible).toList();
+            return new ConversationHistory(id, conversation.expiresAt(), generating(conversation, now), turns);
+        });
+    }
+
+    public void delete(long userId, String id) {
+        transaction.executeWithoutResult(status -> {
+            owned(userId, id, LocalDateTime.now());
+            mapper.deleteOwned(id, userId);
+        });
+    }
+
     public AgentChatResponse chat(long userId, String id, String message) {
         var prepared = prepare(userId, id, message);
         try {
@@ -66,7 +94,7 @@ public class AgentConversationService {
         return transaction.execute(status -> {
             var now = LocalDateTime.now();
             var conversation = owned(userId, id, now);
-            if (conversation.generationToken() != null && conversation.busyUntil().isAfter(now))
+            if (generating(conversation, now))
                 throw conflict("当前会话正在生成回答");
             String token = UUID.randomUUID().toString();
             mapper.claim(id, token, now.plus(properties.requestTimeout()).plusSeconds(30));
@@ -85,6 +113,9 @@ public class AgentConversationService {
 
     private void finish(PreparedTurn prepared, AgentTurn turn) {
         String encoded = history.encode(turn.messages());
+        var response = turn.response();
+        String visible = encodeVisible(new VisibleTurn(prepared.message(), response.answer(),
+                response.sources(), response.knowledgeSources()));
         transaction.executeWithoutResult(status -> {
             var now = LocalDateTime.now();
             var current = owned(prepared.userId(), prepared.id(), now);
@@ -95,6 +126,8 @@ public class AgentConversationService {
             var retained = history.retain(turns);
             mapper.deleteTurns(prepared.id());
             for (int i = 0; i < retained.size(); i++) mapper.insertTurn(prepared.id(), i + 1, retained.get(i));
+            mapper.insertVisibleTurn(prepared.id(), current.revision() + 1, visible);
+            mapper.trimVisibleTurns(prepared.id());
             mapper.advance(prepared.id(), now.plusHours(24));
         });
     }
@@ -115,6 +148,7 @@ public class AgentConversationService {
             var now = LocalDateTime.now();
             owned(userId, id, now);
             mapper.deleteTurns(id);
+            mapper.deleteVisibleTurns(id);
             mapper.advance(id, now.plusHours(24));
         });
     }
@@ -131,10 +165,28 @@ public class AgentConversationService {
         return conversation;
     }
 
+    private boolean generating(AgentConversation conversation, LocalDateTime now) {
+        return conversation.generationToken() != null && conversation.busyUntil().isAfter(now);
+    }
+
+    private String encodeVisible(VisibleTurn turn) {
+        try { return json.writeValueAsString(turn); }
+        catch (JsonProcessingException error) { throw new IllegalStateException("展示历史序列化失败", error); }
+    }
+
+    private VisibleTurn decodeVisible(String stored) {
+        try { return json.readValue(stored, VisibleTurn.class); }
+        catch (JsonProcessingException error) { throw new IllegalStateException("展示历史反序列化失败", error); }
+    }
+
     private static ResponseStatusException conflict(String reason) {
         return new ResponseStatusException(HttpStatus.CONFLICT, reason);
     }
 
     public record CreatedConversation(String conversationId, LocalDateTime expiresAt) { }
+    public record ConversationPage(int page, int size, boolean hasNext, List<CreatedConversation> items) { }
+    public record ConversationHistory(String conversationId, LocalDateTime expiresAt, boolean generating,
+                                      List<VisibleTurn> turns) { }
+    public record VisibleTurn(String question, String answer, List<TradeRule> sources, List<RuleChunk> knowledgeSources) { }
     public record PreparedTurn(long userId, String id, String message, long revision, String token, List<String> turns) { }
 }

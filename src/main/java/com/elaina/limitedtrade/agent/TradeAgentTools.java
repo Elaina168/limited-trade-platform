@@ -31,7 +31,7 @@ public class TradeAgentTools {
         if (page < 1 || size < 1 || size > 10 || (status != null && !STATUSES.contains(status))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "订单查询参数无效");
         }
-        long userId = (Long) context.getContext().get("userId");
+        long userId = AgentToolAccess.owner(context, "list_my_orders");
         var result = orders.listUserOrders(userId, page, size, status);
         return new OrderPage(result.page(), result.size(), result.total(),
                 result.items().stream().map(AgentOrderSummary::from).toList(), LocalDateTime.now());
@@ -41,7 +41,7 @@ public class TradeAgentTools {
     public AgentOrderSummary getMyOrder(@ToolParam(description = "用户提供或本人订单列表返回的正整数订单ID") long orderId,
                                        ToolContext context) {
         if (orderId < 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "订单ID必须为正整数");
-        long userId = (Long) context.getContext().get("userId");
+        long userId = AgentToolAccess.owner(context, "get_my_order");
         return AgentOrderSummary.from(OrderResponse.from(orders.getUserOrder(userId, orderId)));
     }
 

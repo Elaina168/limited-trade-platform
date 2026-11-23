@@ -33,9 +33,24 @@
         SELECT id, user_id, order_type, total_amount, original_amount, discount_amount, status, request_id,
                created_at, expires_at, paid_at, ended_at
         FROM trade_order
-        <include refid="userOrderFilters"/>
-        ORDER BY id DESC
-        LIMIT #{limit} OFFSET #{offset}
+        <choose>
+            <when test="status == null and offset >= 20000">
+                <!-- 深页先从覆盖索引取本页主键，外层只读取本页订单行。 -->
+                JOIN (
+                    SELECT id AS page_order_id
+                    FROM trade_order
+                    <include refid="userOrderFilters"/>
+                    ORDER BY id DESC
+                    LIMIT #{limit} OFFSET #{offset}
+                ) chosen ON chosen.page_order_id = trade_order.id
+                ORDER BY id DESC
+            </when>
+            <otherwise>
+                <include refid="userOrderFilters"/>
+                ORDER BY id DESC
+                LIMIT #{limit} OFFSET #{offset}
+            </otherwise>
+        </choose>
     </select>
 
     <insert id="insertOrder" useGeneratedKeys="true" keyProperty="id">

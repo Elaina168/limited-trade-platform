@@ -31,17 +31,20 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api-docs.html", "/swagger-ui.html",
                                 "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
-                                "/api/ping", "/api/products", "/api/products/search",
+                                "/api/ping", "/api/products", "/api/products/search", "/api/products/{id:[0-9]+}",
                                 "/api/categories", "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/activities/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/agent/chat").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/agent/chat").hasAnyRole("USER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/agent/conversations",
-                                "/api/agent/conversations/*/messages", "/api/agent/conversations/*/messages/stream").authenticated()
-                        .requestMatchers(HttpMethod.DELETE, "/api/agent/conversations/*/messages").authenticated()
+                                "/api/agent/conversations/*/messages", "/api/agent/conversations/*/messages/stream").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/agent/conversations",
+                                "/api/agent/conversations/*/messages").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/agent/conversations/*",
+                                "/api/agent/conversations/*/messages").hasAnyRole("USER", "ADMIN")
                         .requestMatchers("/api/cart/items", "/api/cart/items/**").authenticated()
                         .requestMatchers("/api/addresses", "/api/addresses/**").authenticated()
                         .requestMatchers("/api/coupons/**").authenticated()

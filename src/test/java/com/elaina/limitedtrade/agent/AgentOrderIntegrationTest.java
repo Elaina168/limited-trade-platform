@@ -2,7 +2,6 @@ package com.elaina.limitedtrade.agent;
 
 import com.elaina.limitedtrade.order.OrderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +24,7 @@ class AgentOrderIntegrationTest {
 
     @Test void actualMapperAndServiceKeepUserScopeAndReturnOnlySummary() throws Exception {
         var tools = new TradeAgentTools(orders);
-        var context = new ToolContext(Map.of("userId", 7301L));
+        var context = new ToolContext(AgentToolAccess.issue(7301L).values());
         var page = tools.listMyOrders(1, 10, null, context);
         assertThat(page.total()).isEqualTo(3);
         assertThat(page.items()).extracting(AgentOrderSummary::id).containsExactly(9305L, 9303L, 9301L);

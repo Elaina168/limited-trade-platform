@@ -1,4 +1,4 @@
-param([ValidateSet('single', 'cluster', 'trade-drill')][string]$Mode = 'single')
+param([ValidateSet('single', 'cluster', 'trade-drill', 'vue')][string]$Mode = 'single')
 
 chcp 65001 > $null
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -10,11 +10,15 @@ $directory = switch ($Mode) {
     'single' { 'deploy/nginx' }
     'cluster' { 'deploy/nginx-cluster' }
     'trade-drill' { 'deploy/nginx-trade-drill' }
+    'vue' { 'deploy/nginx-vue' }
 }
 $prefix = (Join-Path $projectRoot $directory).Replace('\', '/') + '/'
 $logs = Join-Path $projectRoot "$directory/logs"
 $temp = Join-Path $projectRoot "$directory/temp"
 if (!(Test-Path -LiteralPath $nginx)) { throw '找不到tools/nginx-1.30.6/nginx.exe，请先准备官方Windows便携版。' }
+if ($Mode -eq 'vue' -and !(Test-Path -LiteralPath (Join-Path $projectRoot 'frontend/dist/index.html'))) {
+    throw '缺少前端构建产物，请在 frontend 执行 npm run build。'
+}
 $pidFile = Join-Path $logs 'nginx.pid'
 # nginx -t可能留下空PID文件，非空文件才表示需要检查已有实例。
 if ((Test-Path -LiteralPath $pidFile) -and ![string]::IsNullOrWhiteSpace((Get-Content -Raw -Encoding UTF8 $pidFile))) {
@@ -30,7 +34,7 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
         if (![string]::IsNullOrWhiteSpace($masterText)) {
             $masterId = [int]$masterText
             Get-Process -Id $masterId -ErrorAction Stop | Out-Null
-            $port = switch ($Mode) { 'single' { 18080 } 'cluster' { 18081 } 'trade-drill' { 18082 } }
+            $port = switch ($Mode) { 'single' { 18080 } 'cluster' { 18081 } 'trade-drill' { 18082 } 'vue' { 18083 } }
             Write-Output "Nginx已启动：http://127.0.0.1:$port/，仅Nginx健康入口为/nginx-health。"
             return
         }

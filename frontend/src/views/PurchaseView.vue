@@ -3,9 +3,9 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.ts'
 import { useCheckoutStore } from '../stores/checkout.ts'
-import { activity, products, myCoupons } from '../api/catalog.ts'
+import { activity, productById, myCoupons } from '../api/catalog.ts'
 import { addresses, setCartQuantity } from '../api/checkout.ts'
-import { errorMessage, RequestError, SessionChangedError } from '../api/http.ts'
+import { errorMessage, HttpError, RequestError, SessionChangedError } from '../api/http.ts'
 import type { Activity, Product, UserCoupon } from '../types/catalog.ts'
 import type { Address } from '../types/checkout.ts'
 
@@ -55,17 +55,21 @@ async function load() {
     error.value = '商品或活动编号无效。'; busy.value = false; return
   }
   try {
-    const [list, data, eventData, mine] = await Promise.all([
-      products(), addresses(), activityId === null ? Promise.resolve(null) : activity(activityId),
+    const [found, data, eventData, mine] = await Promise.all([
+      productById(id), addresses(), activityId === null ? Promise.resolve(null) : activity(activityId),
       activityId === null ? Promise.resolve([]) : myCoupons(),
     ])
     if (current !== sequence) return
-    const found = list.find(item => item.id === id)
-    if (!found) throw new RequestError('商品不存在或当前已下架，请返回商品列表。')
     if (eventData && eventData.productId !== id) throw new RequestError('活动与商品不匹配，请从活动详情重新进入。')
     product.value = found; event.value = eventData; owned.value = mine; addressList.value = data
     if (!data.some(item => String(item.id) === addressId.value)) addressId.value = String(data.find(item => item.defaultAddress)?.id ?? data[0]?.id ?? '')
-  } catch (cause) { if (current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
+  } catch (cause) {
+    if (current === sequence && !(cause instanceof SessionChangedError)) {
+      error.value = cause instanceof HttpError && cause.status === 404 && cause.path === `/api/products/${id}`
+        ? '商品不存在或当前已下架，请返回商品列表。'
+        : errorMessage(cause)
+    }
+  }
   finally { if (current === sequence) busy.value = false }
 }
 function validQuantity() {

@@ -10,6 +10,8 @@ import com.elaina.limitedtrade.auth.PlatformUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Positive;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -27,6 +29,28 @@ public class AgentConversationController {
     public AgentConversationController(AgentConversationService service, AgentSseService streams) {
         this.service = service;
         this.streams = streams;
+    }
+
+    @GetMapping
+    @Operation(summary = "分页查询本人未过期会话", description = "按最近活动倒序，读取不延长有效期。")
+    public AgentConversationService.ConversationPage list(@AuthenticationPrincipal PlatformUserDetails user,
+            @RequestParam(defaultValue = "1") @Positive int page,
+            @RequestParam(defaultValue = "5") @Positive @Max(10) int size) {
+        return service.list(user.getId(), page, size);
+    }
+
+    @GetMapping("/{conversationId}/messages")
+    @Operation(summary = "读取本人会话展示历史", description = "最多50轮已提交问答，生成中的回答不显示。")
+    public AgentConversationService.ConversationHistory history(@AuthenticationPrincipal PlatformUserDetails user,
+            @PathVariable UUID conversationId) {
+        return service.readHistory(user.getId(), conversationId.toString());
+    }
+
+    @DeleteMapping("/{conversationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "删除本人会话与全部历史", description = "需CSRF；释放会话名额并使旧生成资格失效。")
+    public void delete(@AuthenticationPrincipal PlatformUserDetails user, @PathVariable UUID conversationId) {
+        service.delete(user.getId(), conversationId.toString());
     }
 
     @PostMapping

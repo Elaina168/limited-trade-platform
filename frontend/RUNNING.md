@@ -1,5 +1,9 @@
 # Vue前端与Java后端本机运行
 
+从干净检出运行确定性回归或隔离浏览器验收，见[补强 1 运行与学习记录](../docs/learning/46-strengthening-acceptance-ci.md)。
+
+通过 Nginx 直接托管 Vue 构建产物和代理同源 API，见[补强 2 静态入口](../docs/learning/47-strengthening-vue-static.md)。下文保留开发和预览步骤。
+
 从仓库根目录执行下面的PowerShell命令。此说明面向已准备好本机依赖的开发/演示环境；不是Docker或生产环境部署验收。
 
 ## 1. 已有环境与配置

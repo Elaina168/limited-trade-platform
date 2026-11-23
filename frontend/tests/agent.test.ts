@@ -60,15 +60,32 @@ test('identity change during CSRF prevents stream POST',async()=>{
 })
 async function store(){const {useAgentStore}=await import('../src/stores/agent.ts');const auth=useAuthStore();auth.user={id:61,username:'buyer',role:'USER'};auth.status='authenticated';return{auth,agent:useAgentStore()}}
 const id='11111111-1111-4111-8111-111111111111'
-function mockComplete(text=event('start',{})+event('done',result)) { globalThis.fetch=async input=>String(input).endsWith('/csrf')?json({headerName:'X-CSRF-TOKEN',token:'a'}):String(input).endsWith('/conversations')?json({conversationId:id,expiresAt:'2026-11-23T10:00:00'},201):stream(text) }
+const conversation = { conversationId:id, expiresAt:'2026-11-23T10:00:00' }
+const history = { ...conversation, generating:false, turns:[{ question:'问题', answer:result.answer,
+  sources:result.sources, knowledgeSources:result.knowledgeSources }] }
+const conversationPage = { page:1, size:5, hasNext:false, items:[conversation] }
+function mockComplete(text=event('start',{})+event('done',result)) {
+ globalThis.fetch=async input=>{
+   const path = String(input)
+   if (path.endsWith('/csrf')) return json({headerName:'X-CSRF-TOKEN',token:'a'})
+   if (path.endsWith('/conversations')) return json(conversation,201)
+   if (path.includes('/conversations?page=')) return json(conversationPage)
+   if (path.endsWith('/messages')) return json(history)
+   return stream(text)
+ }
+}
 
-test('agent applies reset and final response; refresh persists ID but no message body',async()=>{
+test('agent applies reset and restores committed history from the server after refresh',async()=>{
  mockComplete(event('start',{})+event('delta',{round:1,text:'应撤回草稿'})+event('reset',{round:1,text:''})+event('delta',{round:2,text:'最终'})+event('done',result))
  const {agent}=await store();await agent.send('问题')
  assert.equal(agent.messages[1]!.text,result.answer);assert.equal(agent.messages[1]!.state,'complete');assert.equal(agent.messages[1]!.result!.knowledgeSources.length,1)
  assert.equal(agent.conversationId,id);assert.equal([...saved.values()].some(value=>value.includes('最终回答')),false)
  disposePinia(pinia);pinia=createPinia();setActivePinia(pinia)
- const refreshed=(await store()).agent;assert.equal(refreshed.conversationId,id);assert.equal(refreshed.messages.length,0);assert.match(refreshed.notice,/未.*加载|未.*重载/)
+ const refreshed=(await store()).agent
+ await refreshed.open()
+ assert.equal(refreshed.conversationId,id)
+ assert.deepEqual(refreshed.messages.map(message=>message.text),['问题',result.answer])
+ assert.equal(refreshed.messages[1]!.result!.knowledgeSources.length,1)
 })
 test('incomplete answer retains draft without sources and is not automatically resent',async()=>{
  let posts=0;mockComplete(event('start',{})+event('delta',{round:1,text:'未完成正文'}));const fetch=globalThis.fetch
@@ -93,6 +110,20 @@ test('identity change stops old stream and clears text; same-account history is 
  assert.equal(agent.messages.length,0);assert.equal(agent.conversationId,null);assert.equal(agent.busy,false)
 })
 
+
+test('a history response after identity change cannot show the previous account messages', async()=>{
+ let release!:(value:Response)=>void
+ globalThis.fetch=async input=>String(input).includes('/conversations?page=')
+   ?json(conversationPage):new Promise<Response>(resolve=>{release=resolve})
+ const {auth,agent}=await store()
+ const pending=agent.open()
+ while(!release)await new Promise(resolve=>setImmediate(resolve))
+ advanceSession();auth.user={id:62,username:'other',role:'USER'}
+ release(json(history));await pending
+ assert.equal(agent.conversationId,null)
+ assert.deepEqual(agent.conversations,[])
+ assert.deepEqual(agent.messages,[])
+})
 
 test('malformed conversation response produces a visible error without rejecting the send action',async()=>{
  globalThis.fetch=async input=>String(input).endsWith('/csrf')?json({headerName:'X-CSRF-TOKEN',token:'a'}):json(null,201)

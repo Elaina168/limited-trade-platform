@@ -83,10 +83,14 @@ app:
   agent:
     enabled: ${AGENT_ENABLED:false}
     api-key: ${DEEPSEEK_API_KEY:}
+    budget:
+      enabled: true
+      monthly-yuan: 100
     rag:
       enabled: ${AGENT_RAG_ENABLED:false}
   order-rate-limit:
     enabled: true
+    algorithm: token-bucket
     max-requests: 5
     window-seconds: 10
     key-prefix: limited-trade:rate-limit:order

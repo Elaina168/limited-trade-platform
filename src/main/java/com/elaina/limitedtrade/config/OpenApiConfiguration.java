@@ -27,14 +27,14 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class OpenApiConfiguration {
     private static final Set<String> PUBLIC_READS = Set.of(
-            "/api/ping", "/api/products", "/api/products/search", "/api/categories", "/api/auth/csrf");
+            "/api/ping", "/api/products", "/api/products/search", "/api/products/{id}", "/api/categories", "/api/auth/csrf");
     private static final Set<String> CREATED = Set.of(
             "/api/addresses", "/api/admin/products", "/api/admin/categories", "/api/admin/activities");
     private static final Set<String> EMPTY_SUCCESS = Set.of(
             "PUT /api/cart/items/{productId}", "DELETE /api/cart/items/{productId}",
             "DELETE /api/addresses/{id}", "PUT /api/addresses/{id}/default");
     private static final Set<String> NOT_FOUND = Set.of(
-            "GET /api/activities/{id}", "GET /api/activities/{activityId}/coupons",
+            "GET /api/products/{id}", "GET /api/activities/{id}", "GET /api/activities/{activityId}/coupons",
             "POST /api/admin/products", "PUT /api/admin/products/{id}", "PATCH /api/admin/products/{id}/status",
             "PUT /api/admin/categories/{id}", "POST /api/admin/activities", "POST /api/admin/coupons",
             "PUT /api/cart/items/{productId}", "POST /api/coupons/{id}/claim",

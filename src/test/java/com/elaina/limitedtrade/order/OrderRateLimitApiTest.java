@@ -21,7 +21,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties={"app.order-rate-limit.enabled=true","app.order-rate-limit.max-requests=3","app.order-rate-limit.window-seconds=30"})
+@SpringBootTest(properties={"app.order-rate-limit.enabled=true","app.order-rate-limit.algorithm=token-bucket","app.order-rate-limit.max-requests=3","app.order-rate-limit.window-seconds=30"})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
@@ -61,13 +61,13 @@ class OrderRateLimitApiTest {
         mvc.perform(post("/api/orders/checkout").with(buyer(8201)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productIds\":[16002],\"addressId\":17001,\"requestId\":\"cart-blocked\"}"))
                 .andExpect(status().isTooManyRequests());
-        assertEquals(before,business());assertEquals("3",redis.opsForValue().get(key(8201)));
+        assertEquals(before,business());assertTrue(redis.hasKey(key(8201)));
     }
 
     @Test void separateUsersHaveIndependentBudgets()throws Exception {
         for(int i=0;i<3;i++)direct(8201,"user-a-"+i,201);
         direct(8201,"blocked",429);direct(8202,"user-b-first",201);
-        assertEquals("3",redis.opsForValue().get(key(8201)));assertEquals("1",redis.opsForValue().get(key(8202)));
+        assertTrue(redis.hasKey(key(8201)));assertTrue(redis.hasKey(key(8202)));
     }
 
     @Test void adminBuyingAlsoUsesTheSameUserQuota()throws Exception {
@@ -120,7 +120,7 @@ class OrderRateLimitApiTest {
         mvc.perform(get("/api/orders").with(buyer(8201))).andExpect(status().isOk());
         mvc.perform(post("/api/orders/"+ids.get(0)+"/pay").with(buyer(8201)).with(csrf())).andExpect(status().isOk());
         mvc.perform(post("/api/orders/"+ids.get(1)+"/cancel").with(buyer(8201)).with(csrf())).andExpect(status().isOk());
-        assertEquals("3",redis.opsForValue().get(key(8201)));
+        assertTrue(redis.hasKey(key(8201)));
     }
 
     @Test void loggingInAgainDoesNotResetQuotaForTheSameUser()throws Exception {
@@ -130,14 +130,14 @@ class OrderRateLimitApiTest {
         var second=login();
         mvc.perform(post("/api/orders").session(second).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body("session-third"))).andExpect(status().isCreated());
         mvc.perform(post("/api/orders").session(second).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body("session-fourth"))).andExpect(status().isTooManyRequests());
-        assertEquals("3",redis.opsForValue().get(key(8201)));
+        assertTrue(redis.hasKey(key(8201)));
     }
 
     private void direct(long id,String requestId,int expected)throws Exception {
         mvc.perform(post("/api/orders").with(buyer(id)).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body(requestId))).andExpect(status().is(expected));
     }
     private String body(String id){return "{\"productId\":16001,\"quantity\":1,\"requestId\":\""+id+"\"}";}
-    private String key(long id){return PREFIX+":user:"+id;}
+    private String key(long id){return PREFIX+":token-bucket:3:30:user:"+id;}
     private RequestPostProcessor buyer(long id){return user(new PlatformUserDetails(new AppUser(id,"rate_limit_"+id,"unused",id==8203?"ADMIN":"USER")));}
     private List<List<Map<String,Object>>> business(){return List.of("product","trade_order","cart_item","order_item","order_address","order_timeout_outbox","order_shipment").stream().map(t->jdbc.queryForList("SELECT * FROM "+t)).toList();}
     private MockHttpSession login()throws Exception {

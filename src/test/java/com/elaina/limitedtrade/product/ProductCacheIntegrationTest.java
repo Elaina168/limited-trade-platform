@@ -3,7 +3,13 @@ package com.elaina.limitedtrade.product;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 
 import com.elaina.limitedtrade.order.CreateOrderRequest;
@@ -18,9 +24,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -29,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,9 +54,12 @@ class ProductCacheIntegrationTest {
     @DynamicPropertySource
     static void cacheProperties(DynamicPropertyRegistry registry) {
         registry.add("app.product-cache.key", () -> CACHE_KEY);
+        registry.add("app.product-cache.local-enabled", () -> false);
     }
 
     @Autowired private ProductService productService;
+    @Autowired private ProductCacheStore store;
+    @MockitoSpyBean private ProductMapper productMapper;
     @Autowired private OrderService orderService;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private StringRedisTemplate redis;
@@ -60,7 +72,7 @@ class ProductCacheIntegrationTest {
 
     @BeforeEach
     void createCommittedFixtures() {
-        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM product WHERE id IN (9701,9702)", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM product WHERE id IN (9701,9702,9703)", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM app_user WHERE id=7701", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM activity WHERE id=9701", Integer.class));
         fixtureOwned = true;
@@ -76,12 +88,12 @@ class ProductCacheIntegrationTest {
 
     @AfterEach
     void removeOwnedFixtures() {
-        redis.delete(CACHE_KEY);
+        redis.delete(List.of(CACHE_KEY, CACHE_KEY + ":version", CACHE_KEY + ":missing:" + (9703 % 256)));
         if (fixtureOwned) {
             jdbc.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT order_id FROM order_item WHERE product_id IN (9701,9702))");
             jdbc.update("DELETE FROM trade_order WHERE id IN (SELECT order_id FROM order_item WHERE product_id IN (9701,9702))");
             jdbc.update("DELETE FROM activity WHERE id=9701");
-            jdbc.update("DELETE FROM product WHERE id IN (9701,9702)");
+            jdbc.update("DELETE FROM product WHERE id IN (9701,9702,9703)");
             jdbc.update("DELETE FROM app_user WHERE id=7701");
             if (categoryOwned) {
                 jdbc.update("DELETE FROM product_category WHERE id=12003");
@@ -304,4 +316,263 @@ class ProductCacheIntegrationTest {
         assertEquals(3, jdbc.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9701", Integer.class));
         assertEquals(cached, redis.opsForValue().get(CACHE_KEY));
     }
+
+    @Test
+    void coldBurstSharesOneDatabaseLoad() throws Exception {
+        var starts = new CountDownLatch(12);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        var fixture = new Product(9701L, "冷启动商品", BigDecimal.TEN, 10, "ON_SALE");
+        doAnswer(invocation -> {
+            calls.incrementAndGet();
+            entered.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return List.of(fixture);
+        }).when(productMapper).findOnSaleProducts();
+
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var results = new ArrayList<Future<List<Product>>>();
+            try {
+                for (int index = 0; index < 12; index++) {
+                    results.add(pool.submit(() -> {
+                        starts.countDown();
+                        assertTrue(starts.await(5, TimeUnit.SECONDS));
+                        return productService.listOnSaleProducts();
+                    }));
+                }
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                await().pollInterval(Duration.ofMillis(20)).during(Duration.ofMillis(200)).atMost(Duration.ofSeconds(1))
+                        .untilAsserted(() -> assertEquals(1, calls.get()));
+            } finally {
+                release.countDown();
+            }
+            for (var result : results) assertEquals(9701L, result.get(5, TimeUnit.SECONDS).getFirst().getId());
+        }
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void softExpiryReturnsOldValueAndRefreshesInBackground() throws Exception {
+        productService.listOnSaleProducts();
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return List.of(new Product(9701L, "刷新成功", BigDecimal.TEN, 7, "ON_SALE"));
+        }).when(productMapper).findOnSaleProducts();
+        try {
+            assertTrue(redis.expire(CACHE_KEY, Duration.ofSeconds(8)));
+            assertEquals("缓存测试键盘", productService.listOnSaleProducts().getFirst().getName());
+            assertTrue(entered.await(2, TimeUnit.SECONDS));
+            assertEquals("缓存测试键盘", productService.listOnSaleProducts().getFirst().getName());
+        } finally {
+            release.countDown();
+        }
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                assertEquals("刷新成功", productService.listOnSaleProducts().getFirst().getName()));
+    }
+
+    @Test
+    void hardInvalidationRejectsAnOlderRefresh() throws Exception {
+        productService.listOnSaleProducts();
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return List.of(new Product(9701L, "已下架的旧值", BigDecimal.TEN, 7, "ON_SALE"));
+        }).doReturn(List.of()).when(productMapper).findOnSaleProducts();
+        try {
+            assertTrue(redis.expire(CACHE_KEY, Duration.ofSeconds(8)));
+            assertEquals("缓存测试键盘", productService.listOnSaleProducts().getFirst().getName());
+            assertTrue(entered.await(2, TimeUnit.SECONDS));
+            productService.updateProductStatus(9701, new UpdateProductStatusRequest("OFF_SALE"));
+            assertFalse(redis.hasKey(CACHE_KEY));
+        } finally {
+            release.countDown();
+        }
+        await().atMost(Duration.ofSeconds(4)).ignoreException(ResponseStatusException.class).untilAsserted(() ->
+                assertTrue(productService.listOnSaleProducts().isEmpty()));
+        assertEquals("[]", redis.opsForValue().get(CACHE_KEY));
+    }
+
+    @Test
+    void refreshFailureKeepsOriginalHardExpiryAndColdFailureReturnsUnavailable() {
+        productService.listOnSaleProducts();
+        doThrow(new DataAccessResourceFailureException("测试回源失败")).when(productMapper).findOnSaleProducts();
+        assertTrue(redis.expire(CACHE_KEY, Duration.ofSeconds(7)));
+        assertEquals("缓存测试键盘", productService.listOnSaleProducts().getFirst().getName());
+        verify(productMapper, timeout(2000).times(2)).findOnSaleProducts();
+        long remaining = redis.getExpire(CACHE_KEY, TimeUnit.MILLISECONDS);
+        assertTrue(remaining > 0 && remaining <= 7000);
+        redis.delete(CACHE_KEY);
+        assertEquals(503, assertThrows(ResponseStatusException.class,
+                () -> productService.listOnSaleProducts()).getStatusCode().value());
+        assertFalse(redis.hasKey(CACHE_KEY));
+
+        doReturn(List.of(new Product(9701L, "恢复商品", BigDecimal.TEN, 7, "ON_SALE")))
+                .when(productMapper).findOnSaleProducts();
+        await().atMost(Duration.ofSeconds(4)).ignoreException(ResponseStatusException.class).untilAsserted(() ->
+                assertEquals("恢复商品", productService.listOnSaleProducts().getFirst().getName()));
+    }
+
+    @Test
+    void coldWaitTimesOutWithoutStartingASecondLoad() {
+        var release = new CountDownLatch(1);
+        var fixture = new Product(9701L, "慢加载商品", BigDecimal.TEN, 10, "ON_SALE");
+        doAnswer(invocation -> {
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return List.of(fixture);
+        }).when(productMapper).findOnSaleProducts();
+        try {
+            var timedOut = assertThrows(ResponseStatusException.class, () -> productService.listOnSaleProducts());
+            assertEquals(503, timedOut.getStatusCode().value());
+            assertEquals("等待商品列表超时", timedOut.getReason());
+        } finally {
+            release.countDown();
+        }
+        assertEquals("慢加载商品", productService.listOnSaleProducts().getFirst().getName());
+        verify(productMapper, times(1)).findOnSaleProducts();
+    }
+
+    @Test
+    void wholeListTtlStaysWithinJitterWindow() {
+        var observed = new java.util.HashSet<Long>();
+        for (int run = 0; run < 8; run++) {
+            redis.delete(CACHE_KEY);
+            productService.listOnSaleProducts();
+            long remaining = redis.getExpire(CACHE_KEY, TimeUnit.MILLISECONDS);
+            assertTrue(remaining >= 24_000 && remaining <= 30_000);
+            observed.add(remaining / 250);
+        }
+        assertTrue(observed.size() > 1);
+    }
+
+    @Test
+    void missingProductUsesNegativeSlotUntilPublication() throws Exception {
+        mockMvc.perform(get("/api/products/9703")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/products/9703")).andExpect(status().isNotFound());
+        verify(productMapper, times(1)).findById(9703);
+        String slot = CACHE_KEY + ":missing:" + (9703 % 256);
+        assertEquals(redis.opsForValue().get(CACHE_KEY + ":version") + ":9703", redis.opsForValue().get(slot));
+        assertTrue(redis.getExpire(slot, TimeUnit.MILLISECONDS) > 0);
+        mockMvc.perform(get("/api/products/9959")).andExpect(status().isNotFound());
+        verify(productMapper).findById(9959);
+        // 同一个槽替换后，确切 ID 重新查询并覆盖标记。
+        mockMvc.perform(get("/api/products/9703")).andExpect(status().isNotFound());
+        assertEquals(redis.opsForValue().get(CACHE_KEY + ":version") + ":9703", redis.opsForValue().get(slot));
+        jdbc.update("INSERT INTO product(id,name,price,stock,status) VALUES (9703,'待上架商品',12.00,7,'OFF_SALE')");
+        mockMvc.perform(get("/api/products/9703")).andExpect(status().isNotFound());
+        productService.updateProductStatus(9703, new UpdateProductStatusRequest("ON_SALE"));
+        assertFalse(redis.hasKey(slot));
+        mockMvc.perform(get("/api/products/9703")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("待上架商品")).andExpect(jsonPath("$.stock").value(7));
+        mockMvc.perform(get("/api/products/9702")).andExpect(status().isNotFound());
+        assertFalse(redis.hasKey(CACHE_KEY + ":missing:" + (9702 % 256)));
+    }
+
+
+    @Test
+    void remoteInvalidationRejectsInFlightList() throws Exception {
+        var reader = new ProductCache(store, true, false, false);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var pending = pool.submit(() -> reader.getOrLoad(() -> {
+                entered.countDown();
+                try {
+                    assertTrue(release.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(error);
+                }
+                return List.of(new Product(9701L, "跨实例旧值", BigDecimal.TEN, 10, "ON_SALE"));
+            }));
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                productService.updateProductStatus(9701, new UpdateProductStatusRequest("OFF_SALE"));
+            } finally {
+                release.countDown();
+            }
+            var rejected = assertThrows(java.util.concurrent.ExecutionException.class,
+                    () -> pending.get(5, TimeUnit.SECONDS));
+            assertEquals(503, ((ResponseStatusException) rejected.getCause()).getStatusCode().value());
+            assertFalse(redis.hasKey(CACHE_KEY));
+        } finally {
+            reader.stopWorker();
+        }
+    }
+
+    @Test
+    void anotherInstancesLocalSnapshotExpiresWithoutNotification() {
+        var reader = new ProductCache(store, true, true, false);
+        try {
+            var fixture = new Product(9701L, "旧本地快照", BigDecimal.TEN, 10, "ON_SALE");
+            assertEquals("旧本地快照", reader.getOrLoad(() -> List.of(fixture)).getFirst().getName());
+            productService.updateProductStatus(9701, new UpdateProductStatusRequest("OFF_SALE"));
+            assertFalse(redis.hasKey(CACHE_KEY));
+            await().atMost(Duration.ofSeconds(4)).untilAsserted(() ->
+                    assertTrue(reader.getOrLoad(List::of).isEmpty()));
+        } finally {
+            reader.stopWorker();
+        }
+    }
+
+    @Test
+    void failedSharedInvalidationKeepsLocalReadsSafeAndRetriesAfterRecovery() {
+        var writerStore = spy(store);
+        var writer = new ProductCache(writerStore, true, true, false);
+        try {
+            var fixture = new Product(9701L, "失效前快照", BigDecimal.TEN, 10, "ON_SALE");
+            writer.getOrLoad(() -> List.of(fixture));
+            doThrow(new org.springframework.data.redis.RedisConnectionFailureException("模拟失效失败"))
+                    .doCallRealMethod().when(writerStore).invalidate(null);
+            new TransactionTemplate(transactionManager).executeWithoutResult(tx -> writer.evictAfterCommit());
+
+            assertTrue(redis.hasKey(CACHE_KEY));
+            assertTrue(writer.getOrLoad(List::of).isEmpty());
+            assertTrue(redis.hasKey(CACHE_KEY), "降级回源不应回填 Redis");
+            await().atMost(Duration.ofSeconds(4)).untilAsserted(() -> {
+                writer.retryInvalidation();
+                assertFalse(redis.hasKey(CACHE_KEY));
+            });
+            assertTrue(productService.listOnSaleProducts().stream().anyMatch(item -> item.getId() == 9701L));
+        } finally {
+            writer.stopWorker();
+        }
+    }
+
+    @Test
+    void remotePublicationRejectsInFlightNegativeMarker() throws Exception {
+        var reader = new ProductCache(store, true, false, false);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var pending = pool.submit(() -> reader.findProduct(9703, () -> {
+                entered.countDown();
+                try {
+                    assertTrue(release.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(error);
+                }
+                return null;
+            }));
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                jdbc.update("INSERT INTO product(id,name,price,stock,status) VALUES (9703,'跨实例上架',12,7,'OFF_SALE')");
+                productService.updateProductStatus(9703, new UpdateProductStatusRequest("ON_SALE"));
+            } finally {
+                release.countDown();
+            }
+            assertNull(pending.get(5, TimeUnit.SECONDS));
+            assertFalse(redis.hasKey(CACHE_KEY + ":missing:" + (9703 % 256)));
+            assertEquals("跨实例上架", productService.getOnSaleProduct(9703).getName());
+        } finally {
+            reader.stopWorker();
+        }
+    }
+
 }

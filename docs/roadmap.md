@@ -1,5 +1,17 @@
 # 后续学习与工程化路线
 
+## 最新补强安排（2026-11-23）
+
+Vue七阶段本机交付已完成。用户随后确认继续补强当前Java交易项目，范围与历史安排冲突时，以[当前补强范围](plans/2026-11-23-strengthening-scope.md)和[15阶段补强计划](superpowers/plans/2026-11-23-project-strengthening.md)为准。
+
+顺序：可移植验收与CI → Vue静态托管 → 正确性/吞吐/延迟基线 → MySQL调优 → 缓存基础 → 多级缓存/过滤器/一致性和故障治理 → 令牌桶 → 会话列表/历史 → 调用/Token/费用预算 → 工具权限/攻击样本 → 持续评测 → 混合检索/RRF → 重排/改写实验与向量库决策 → 收尾进行 Compose 真实部署与发布回滚、告警和持续运行。
+
+实际执行顺序为补强1、2 → 补强4–14 → 收尾补验补强3、实施补强15。补强3编号和已写的部署文件保留。后续性能测试使用隔离的本机环境，部署后的结果另记。已留存[补强4的原生环境基线](learning/49-strengthening-trade-baseline.md)，补强5的本人订单深分页已验证，补强6的商品缓存基础已验证，[补强7的多级缓存和故障恢复](learning/52-strengthening-cache-consistency.md)已通过双实例验证，[补强8的交易入口令牌桶](learning/53-strengthening-order-token-bucket.md)已通过双实例验证，[补强9的会话列表与历史读取](learning/54-strengthening-agent-history.md)已通过浏览器和迁移验证，[补强10的调用与费用预算](learning/55-strengthening-agent-budget.md)已完成隔离验证，[补强11的工具授权与审计](learning/56-strengthening-agent-tool-access.md)已完成防御回归，[补强12的多配置评测基线](learning/57-strengthening-evaluation-baselines.md)已完成本地评测，下一阶段为补强13。
+
+重叠Agent能力按用户确认在当前项目和未来独立Agent项目都完整实现，不能据后者清单取消当前预算、历史、安全或评测。Python、多Agent、HITL和写操作审批等属于未来项目；当前保持Java只读助手与交易单体。
+
+本文只更新计划；未安装依赖、修改业务代码、启动部署或执行模型请求，也不自动提交推送。各阶段开始前核对真实配置、接口、版本和资源，补充该阶段具体实施计划。
+
 ## 当前执行安排（2026-11-17）
 
 求职目标已明确为Java后端＋Agent应用开发。沿用现有Boot3.5.16交易工程，采用Spring AI1.1.8与DeepSeek，首期实现“本人订单咨询＋交易规则解释”，随后按实际需求推进RAG、多轮及流式交互、评估与可靠性。Python服务、MCP和多Agent暂不引入，不把既往“AI暂缓”当作当前安排。

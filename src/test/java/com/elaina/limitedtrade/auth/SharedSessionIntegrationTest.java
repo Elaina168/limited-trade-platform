@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -123,7 +124,8 @@ class SharedSessionIntegrationTest {
         assertEquals(1, keys.size());
         long ttl = redis.getExpire(keys.getFirst());
         assertTrue(ttl > 0 && ttl <= 1800);
-        var properties = new OrderRateLimitProperties(true, 1, 30, prefix + ":rate");
+        var properties = new OrderRateLimitProperties(true, 1, 30, prefix + ":rate",
+                OrderRateLimitProperties.Algorithm.TOKEN_BUCKET);
         new RedisOrderRateLimiter(redis, properties).check(42001);
         var denied = assertThrows(OrderRateLimitExceededException.class, () ->
                 new RedisOrderRateLimiter(second.getBean(StringRedisTemplate.class), properties).check(42001));
@@ -135,8 +137,8 @@ class SharedSessionIntegrationTest {
     @EnableWebSecurity
     @Import({SecurityConfig.class, AuthController.class, DatabaseUserDetailsService.class})
     static class WebConfiguration {
-        @Bean RedisConnectionFactory redisConnectionFactory() {
-            return new LettuceConnectionFactory(new RedisStandaloneConfiguration("127.0.0.1", 6379),
+        @Bean RedisConnectionFactory redisConnectionFactory(@Value("${spring.data.redis.port:6379}") int port) {
+            return new LettuceConnectionFactory(new RedisStandaloneConfiguration("127.0.0.1", port),
                     LettuceClientConfiguration.builder().commandTimeout(Duration.ofSeconds(2)).shutdownTimeout(Duration.ZERO).build());
         }
         @Bean StringRedisTemplate stringRedisTemplate(RedisConnectionFactory factory) { return new StringRedisTemplate(factory); }

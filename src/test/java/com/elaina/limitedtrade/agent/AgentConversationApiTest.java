@@ -63,6 +63,28 @@ class AgentConversationApiTest {
         verify(service).clear(7301, id);
     }
 
+    @Test void authenticatedUserCanGetConversationPage() throws Exception {
+        mvc.perform(get("/api/agent/conversations").with(principal())).andExpect(status().isOk());
+    }
+
+    @Test void historyAndDeleteRequireOwnerAndOnlyReturnPublicHistory() throws Exception {
+        var path = "/api/agent/conversations/" + id;
+        var now = LocalDateTime.now();
+        when(service.readHistory(7301, id)).thenReturn(new AgentConversationService.ConversationHistory(
+                id, now, false, List.of(new AgentConversationService.VisibleTurn("问题", "答案", List.of(), List.of()))));
+        mvc.perform(get("/api/agent/conversations")).andExpect(status().isUnauthorized());
+        mvc.perform(get(path + "/messages")).andExpect(status().isUnauthorized());
+        mvc.perform(delete(path).with(csrf())).andExpect(status().isUnauthorized());
+        mvc.perform(delete(path).with(principal())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/agent/conversations").with(principal()).param("size", "11")).andExpect(status().isBadRequest());
+        mvc.perform(get(path + "/messages").with(principal())).andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.turns[0].answer").value("答案"))
+                .andExpect(jsonPath("$.turns[0].toolCalls").doesNotExist());
+        mvc.perform(delete(path).with(principal()).with(csrf())).andExpect(status().isNoContent());
+        verify(service).delete(7301, id);
+    }
+
     @Test void invalidInputIsRejectedAndDomainStatusesRemainVisible() throws Exception {
         var path = "/api/agent/conversations/" + id + "/messages";
         for (String text : List.of(" ", "a".repeat(2001))) {

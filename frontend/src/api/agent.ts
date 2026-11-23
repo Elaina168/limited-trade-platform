@@ -1,12 +1,21 @@
-import { postJson, writeJson, postEventStream, RequestError, SessionChangedError, sessionRevision } from './http.ts'
+import { readJson, postJson, writeJson, postEventStream, RequestError, SessionChangedError, sessionRevision } from './http.ts'
 import { readAgentStream } from '../utils/agentStream.ts'
-import type { AgentEvent, CreatedConversation } from '../types/agent.ts'
+import type { AgentEvent, ConversationHistory, ConversationPage, CreatedConversation } from '../types/agent.ts'
 
 export async function createConversation(signal: AbortSignal) {
   const value = await postJson<unknown>('/api/agent/conversations', undefined, sessionRevision(), signal)
   if (value === null || typeof value !== 'object' || Array.isArray(value) || !('conversationId' in value) || !('expiresAt' in value) || typeof value.conversationId !== 'string' || !value.conversationId || typeof value.expiresAt !== 'string') throw new RequestError('助手返回的会话信息无法读取。')
   return { conversationId: value.conversationId, expiresAt: value.expiresAt } as CreatedConversation
 }
+export const listConversations = (page: number, signal: AbortSignal) =>
+  readJson<ConversationPage>(`/api/agent/conversations?page=${page}`, sessionRevision(), signal)
+
+export const readConversation = (id: string, signal: AbortSignal) =>
+  readJson<ConversationHistory>(`/api/agent/conversations/${encodeURIComponent(id)}/messages`, sessionRevision(), signal)
+
+export const deleteConversation = (id: string, signal: AbortSignal) =>
+  writeJson(`/api/agent/conversations/${encodeURIComponent(id)}`, 'DELETE', undefined, sessionRevision(), signal)
+
 export const clearConversation = (id: string, signal: AbortSignal) => writeJson(`/api/agent/conversations/${encodeURIComponent(id)}/messages`, 'DELETE', undefined, sessionRevision(), signal)
 export async function streamMessage(id: string, message: string, onEvent: (event: AgentEvent) => void, signal: AbortSignal) {
   const expected = sessionRevision()

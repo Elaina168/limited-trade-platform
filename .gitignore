@@ -25,3 +25,4 @@ logs/
 deploy/nginx/temp/
 deploy/nginx-cluster/temp/
 deploy/nginx-trade-drill/temp/
+deploy/nginx-vue/temp/

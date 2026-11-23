@@ -34,6 +34,12 @@ class AgentConfigurationTest {
                 });
     }
 
+    @Test void monthlyBudgetSettingsBindAtStartup() {
+        runner.withPropertyValues("app.agent.enabled=true", "app.agent.api-key=test-key",
+                        "app.agent.budget.monthly-yuan=100")
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
     @Test void invalidBudgetFailsStartup() {
         runner.withPropertyValues("app.agent.enabled=true", "app.agent.api-key=test-key",
                         "app.agent.max-tool-calls=0")

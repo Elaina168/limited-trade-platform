@@ -1,4 +1,4 @@
-param([ValidateSet('single', 'cluster', 'trade-drill')][string]$Mode = 'single')
+param([ValidateSet('single', 'cluster', 'trade-drill', 'vue')][string]$Mode = 'single')
 
 chcp 65001 > $null
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -10,6 +10,7 @@ $directory = switch ($Mode) {
     'single' { 'deploy/nginx' }
     'cluster' { 'deploy/nginx-cluster' }
     'trade-drill' { 'deploy/nginx-trade-drill' }
+    'vue' { 'deploy/nginx-vue' }
 }
 $prefix = (Join-Path $projectRoot $directory).Replace('\', '/') + '/'
 $pidFile = Join-Path $projectRoot "$directory/logs/nginx.pid"

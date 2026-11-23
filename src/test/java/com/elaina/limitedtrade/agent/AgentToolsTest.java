@@ -17,7 +17,7 @@ import static org.mockito.Mockito.*;
 class AgentToolsTest {
     private final OrderService orders = mock(OrderService.class);
     private final TradeAgentTools tools = new TradeAgentTools(orders);
-    private final ToolContext context = new ToolContext(Map.of("userId", 7301L));
+    private final ToolContext context = new ToolContext(AgentToolAccess.issue(7301L).values());
 
     @Test void listUsesTrustedUserAndExcludesPrivateOrderFields() throws Exception {
         var order = new OrderResponse(9301L, new BigDecimal("19.90"), new BigDecimal("19.90"),
@@ -40,6 +40,13 @@ class AgentToolsTest {
         assertThatThrownBy(() -> tools.getMyOrder(9302L, context))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test void orderToolRequiresServerIssuedContext() {
+        assertThatThrownBy(() -> tools.getMyOrder(9301L, new ToolContext(Map.of())))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+        verifyNoInteractions(orders);
     }
 
     @Test void invalidModelArgumentsNeverReachService() {

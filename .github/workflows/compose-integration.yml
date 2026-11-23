@@ -1,0 +1,39 @@
+name: Compose 真实集成验收
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COMPOSE_PROJECT_NAME: trade-check-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.13.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 构建 Java
+        run: mvn --batch-mode --no-transfer-progress -Pci verify
+      - name: 构建 Vue
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: 生成隔离部署配置
+        shell: pwsh
+        run: ./scripts/prepare-containers.ps1 -Instance $env:COMPOSE_PROJECT_NAME
+      - name: 启停、重建与故障演练
+        run: python3 scripts/verify-compose.py "$COMPOSE_PROJECT_NAME"

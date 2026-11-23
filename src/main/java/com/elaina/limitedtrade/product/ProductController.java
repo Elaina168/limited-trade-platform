@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -26,9 +27,13 @@ public class ProductController {
     @GetMapping
     @Operation(summary = "查询在售商品列表", description = "匿名可读；返回在售商品数组。")
     public List<ProductListItem> listProducts() {
-        return productService.listOnSaleProducts().stream()
-                .map(product -> new ProductListItem(product.getId(), product.getName(), product.getPrice(),
-                        product.getStock(), product.getStatus())).toList();
+        return productService.listOnSaleProducts().stream().map(ProductListItem::from).toList();
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "查询单个在售商品", description = "匿名可读；不存在或已下架返回404。")
+    public ProductListItem getProduct(@PathVariable @Positive long id) {
+        return ProductListItem.from(productService.getOnSaleProduct(id));
     }
 
     @GetMapping("/search")

@@ -95,6 +95,10 @@ SOURCE sql/009_cart_item.sql;
 SOURCE sql/010_user_address.sql;
 SOURCE sql/011_order_checkout.sql;
 SOURCE sql/012_order_shipment.sql;
+SOURCE sql/013_activity_coupon.sql;
+SOURCE sql/014_agent_conversation.sql;
+SOURCE sql/015_agent_conversation_visible_history.sql;
+SOURCE sql/016_agent_usage_budget.sql;
 SOURCE sql/seed.sql;
 
 USE limited_trade_platform_test;
@@ -110,9 +114,13 @@ SOURCE sql/009_cart_item.sql;
 SOURCE sql/010_user_address.sql;
 SOURCE sql/011_order_checkout.sql;
 SOURCE sql/012_order_shipment.sql;
+SOURCE sql/013_activity_coupon.sql;
+SOURCE sql/014_agent_conversation.sql;
+SOURCE sql/015_agent_conversation_visible_history.sql;
+SOURCE sql/016_agent_usage_budget.sql;
 ```
 
-以上命令仅用于首次初始化，当前本机已执行完毕，请勿重复执行。脚本遇到已有表或重复编号会报错，不覆盖原数据。`seed.sql` 只用于开发库，测试用例自行插入测试库数据，并通过事务回滚。
+以上命令用于首次初始化。已有数据库只按顺序执行尚未应用的编号脚本。脚本遇到已有表或重复编号会报错，不覆盖原数据。`seed.sql` 只用于开发库，测试用例自行插入测试库数据，并通过事务回滚。
 
 本机已生成 `learning_admin` 和 `learning_user` 两个学习账号，随机密码只保存在被 Git 忽略的 `config/local-accounts.txt`。该文件不进入 JAR 或 Git。新环境的账号初始化与登录操作见 [登录与权限学习记录](docs/learning/04-security.md)，不能假设其他机器存在这些本机账号。
 
@@ -571,3 +579,51 @@ Spring Cloud明确列为后续专项，先在独立小实验中学习；是否�
 前端七阶段已完成本机交付验收，覆盖买家购物/订单、管理员维护/发货、开发库Agent/RAG流式问答；42项前端测试、类型检查、构建及实际浏览器检查通过。开发库014已迁移，原有数据在验收后核对保留。Java此次仅重新打包，未全量执行Java测试。
 
 启动与演示见[Vue本机运行说明](frontend/RUNNING.md)，分层证据与限制见[第七阶段记录](docs/learning/45-vue-integration-delivery.md)。Vue由独立Vite服务提供，Java根路径仍为旧页面；没有进行Docker或正式部署。
+
+## 2026-11-23 补强 1
+
+新增确定性 CI 和隔离浏览器验收入口。干净检出的执行步骤，以及 Redis、RabbitMQ 和真实模型的独立入口，见[补强 1 运行与学习记录](docs/learning/46-strengthening-acceptance-ci.md)。
+
+## 2026-11-23 补强 2
+
+新增 Nginx Vue 静态入口 18083，统一提供 dist 与同源 Java API。启动步骤、缓存和 SSE 验收见[补强 2 记录](docs/learning/47-strengthening-vue-static.md)。
+
+## 2026-11-23 补强 3
+
+仓库已准备五服务 Compose 编排、隔离验收与手动 CI 入口。安装盘点、启动及重建流程见[补强 3 记录](docs/learning/48-strengthening-compose.md)。
+
+## 2026-11-23 补强 4
+
+新增原生环境交易基准入口，保存读负载、并发下单与状态竞争、数据对账及资源采样。命令和证据见[补强 4 记录](docs/learning/49-strengthening-trade-baseline.md)。
+
+## 2026-11-23 补强 5
+
+本人订单的无状态筛选深页用既有覆盖索引先取当页主键。SQL 前后样本、执行计划和真实 API 验证见[补强 5 记录](docs/learning/50-strengthening-mysql-pagination.md)。
+
+## 2026-11-23 补强 6
+
+商品列表新增单 JVM 回源合并、TTL 抖动和后台刷新，选购页通过公开按 ID 接口获取商品。缓存边界、运行验证及调用链见[补强 6 记录](docs/learning/51-strengthening-product-cache.md)。
+
+## 2026-11-23 补强 7
+
+商品缓存新增 Caffeine、可选布隆提示及 Redis 失效补偿。双实例断连与恢复证据见[补强 7 记录](docs/learning/52-strengthening-cache-consistency.md)。
+
+## 2026-11-23 补强 8
+
+直接下单与购物车结算共用 Redis 令牌桶，固定窗口可通过配置切回。容量、重试语义和双实例验收见[补强 8 记录](docs/learning/53-strengthening-order-token-bucket.md)。
+
+## 2026-11-23 补强 9
+
+交易助手可分页查看、切换和删除本人会话，刷新或重登后恢复已提交问答。已经执行 014 的数据库在启用新版本 Agent 前执行一次 `sql/015_agent_conversation_visible_history.sql`。保留策略、迁移及验收见[补强 9 记录](docs/learning/54-strengthening-agent-history.md)。
+
+## 2026-11-23 补强 10
+
+Agent 按北京时间自然月使用 100 元项目预算。已有数据库启用预算前需执行一次 `sql/016_agent_usage_budget.sql`。限额、上下文估算、未知用量和验证参见[补强 10 记录](docs/learning/55-strengthening-agent-budget.md)。
+
+## 2026-11-23 补强 11
+
+Agent 增加业务角色准入、服务端工具身份上下文、调用与结果边界及结构化审计。规则和验收见[补强 11 记录](docs/learning/56-strengthening-agent-tool-access.md)。
+
+## 2026-11-23 补强 12
+
+检索新增三组固定配置和独立留出题。Agent 新版完整评测区分脚本化本地与显式真实上游。逐题报告、指标和入口见[补强 12 记录](docs/learning/57-strengthening-evaluation-baselines.md)。

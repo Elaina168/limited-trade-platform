@@ -1,0 +1,12 @@
+[
+  {"id":"v2-c1","split":"calibration","query":"补发超时关闭的消息会重新计算付款期限吗？","expected":"timeout","heading":"回补与幂等"},
+  {"id":"v2-c2","split":"calibration","query":"怎样为这个平台的商品投保运输险？","expected":null},
+  {"id":"v2-h1","split":"holdout","query":"模拟支付重复提交会不会再次扣减库存？","expected":"payment","heading":"模拟支付与重复请求"},
+  {"id":"v2-h2","split":"holdout","query":"取消活动订单后会释放优惠券占用和活动名额吗？","expected":"cancellation","heading":"库存与优惠券释放"},
+  {"id":"v2-h3","split":"holdout","query":"只有 CLOSED 状态能判断是定时扫描关单还是 RabbitMQ 消费关单吗？","expected":"timeout","heading":"消息、扫描与处理延迟"},
+  {"id":"v2-h4","split":"holdout","query":"确认收货成功后再次点确认，会覆盖原来的收货时间吗？","expected":"fulfillment","heading":"买家确认收货"},
+  {"id":"v2-h5","split":"holdout","query":"本人订单工具会把运单号和收件手机号传给助手吗？","expected":"order-access","heading":"实时数据与工具摘要"},
+  {"id":"v2-h6","split":"holdout","query":"平台商品是否支持分期，具体分期年化利率是多少？","expected":null},
+  {"id":"v2-h7","split":"holdout","query":"平台下单积分的兑换比例和有效期是多少？","expected":null},
+  {"id":"v2-h8","split":"holdout","query":"如何修改国家法定节假日的加班计算规则？","expected":null}
+]

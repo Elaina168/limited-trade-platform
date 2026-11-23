@@ -74,6 +74,40 @@ class AgentEvaluationTest {
                 .containsEntry("unknownTokenRequests", 1L);
     }
 
+    @Test void versionedAgentHoldoutAndRetrievalAdditionsHaveIndependentIdsAndQuestions() throws Exception {
+        var oldAgent = json.readTree(EvaluationIdentity.resource("agent-evaluation.json"));
+        var holdout = json.readTree(EvaluationIdentity.resource("agent-evaluation-v3-holdout.json"));
+        var scripts = json.readTree(EvaluationIdentity.resource("agent-evaluation-v3-local-scripts.json"));
+        var ids = new java.util.HashSet<String>();
+        var questions = new java.util.HashSet<String>();
+        for (var suite : List.of(oldAgent, holdout)) for (var scenario : suite) {
+            String id = scenario.required("id").asText();
+            assertThat(ids.add(id)).isTrue();
+            assertThat(scripts.required(id).size()).isEqualTo(scenario.required("steps").size());
+            for (var step : scenario.required("steps")) {
+                assertThat(questions.add(step.required("question").asText())).isTrue();
+            }
+        }
+        assertThat(ids).hasSize(15);
+        assertThat(questions).hasSize(17);
+        var oldRetrieval = json.readTree(EvaluationIdentity.resource("rag-evaluation.json"));
+        var newRetrieval = json.readTree(EvaluationIdentity.resource("rag-evaluation-v2-additions.json"));
+        ids.clear();
+        questions.clear();
+        for (var suite : List.of(oldRetrieval, newRetrieval)) for (var task : suite) {
+            assertThat(ids.add(task.required("id").asText())).isTrue();
+            assertThat(questions.add(task.required("query").asText())).isTrue();
+        }
+        assertThat(ids).hasSize(30);
+        for (var task : newRetrieval) {
+            assertThat(task.required("split").asText()).isIn("calibration", "holdout");
+            if (task.required("expected").isNull()) continue;
+            var source = new String(EvaluationIdentity.resource("knowledge/" + task.required("expected").asText() + ".md"),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(source).contains("## " + task.required("heading").asText());
+        }
+    }
+
     @Test void fixedSuiteHasTwelveScenariosAndFourteenRequests() throws Exception {
         var suite = json.readTree(new ClassPathResource("agent-evaluation.json").getInputStream());
         assertThat(suite.size()).isEqualTo(12);

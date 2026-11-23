@@ -242,6 +242,65 @@ class TradeAgentProtocolTest {
         assertThat(requests.getFirst().path("tools").toString()).contains("search_trade_rules").doesNotContain("\"name\":\"get_trade_rules\"");
     }
 
+    @Test void oversizedRuleResultNeverReachesAnotherModelRoundOrAuditPayload() throws Exception {
+        var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
+        String privateFixture = "只用于测试的长资料标记";
+        var chunk = new com.elaina.limitedtrade.agent.rag.RuleChunk("large-1", "payment", "说明",
+                "knowledge/payment.md", 1, 1, privateFixture.repeat(2000), 0.9);
+        when(knowledge.search("支付期限")).thenReturn(
+                new com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.SearchResult("MATCHED", List.of(chunk)));
+        replies.add(toolReply("search_trade_rules", "{\"query\":\"支付期限\"}"));
+
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AgentToolAccess.class);
+        var audit = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        audit.start();
+        logger.addAppender(audit);
+        try {
+            runner().withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge)
+                    .run(context -> assertThatThrownBy(() -> context.getBean(TradeAgentService.class).chat(7301, "支付期限"))
+                            .isInstanceOfSatisfying(ResponseStatusException.class,
+                                    error -> assertThat(error.getStatusCode().value()).isEqualTo(413)));
+            assertThat(requests).hasSize(1);
+            assertThat(audit.list).singleElement().satisfies(entry -> {
+                assertThat(entry.getKeyValuePairs()).extracting(pair -> pair.key)
+                        .containsExactly("event", "agentRequestId", "tool", "status", "reason");
+                assertThat(entry.getKeyValuePairs().toString()).contains("search_trade_rules", "413")
+                        .doesNotContain(privateFixture, "支付期限", "7301");
+                assertThat(entry.getThrowableProxy()).isNull();
+            });
+        } finally {
+            logger.detachAppender(audit);
+            audit.stop();
+        }
+    }
+
+    @Test void contextTrimsAnEntireOldToolTurnAndKeepsNewerHistory() throws Exception {
+        replies.add(toolReply("get_trade_rules", "{\"topic\":\"PAYMENT\"}"));
+        replies.add(answerReply());
+        replies.add(answerReply());
+        runner().run(context -> {
+            var service = context.getBean(TradeAgentService.class);
+            var old = service.chatTurn(7301, "旧规则", List.of());
+            var history = new ArrayList<>(old.messages());
+            history.set(0, new org.springframework.ai.chat.messages.UserMessage("旧".repeat(15000)));
+            history.add(new org.springframework.ai.chat.messages.UserMessage("保留的近期问题"));
+            history.add(new org.springframework.ai.chat.messages.AssistantMessage("保留的近期回答"));
+            var latest = service.chatTurn(7301, "新问题", history);
+            var sent = requests.get(2).path("messages");
+            assertThat(sent).hasSize(4);
+            assertThat(sent.get(1).path("content").asText()).isEqualTo("保留的近期问题");
+            assertThat(sent.toString()).doesNotContain("tool_call_id", "旧旧");
+            assertThat(latest.messages()).hasSize(2);
+        });
+    }
+
+    @Test void oversizedCurrentInputIsRejectedBeforeAnUpstreamHttpRequest() {
+        runner().run(context -> assertThatThrownBy(() -> context.getBean(TradeAgentService.class)
+                .chat(7301, "大".repeat(12000))).isInstanceOfSatisfying(ResponseStatusException.class,
+                        error -> assertThat(error.getStatusCode().value()).isEqualTo(413)));
+        assertThat(requests).isEmpty();
+    }
+
     @Test void successfulTurnsKeepPairedToolHistoryButNotOldSources() throws Exception {
         replies.add(toolReply("get_trade_rules", "{\"topic\":\"PAYMENT\"}"));
         replies.add(answerReply());

@@ -23,8 +23,10 @@ public record AgentProperties(
         @DefaultValue("4") @Min(1) @Max(10) int maxModelCalls,
         @DefaultValue("4") @Min(1) @Max(10) int maxToolCalls,
         @DefaultValue("1024") @Min(1) @Max(4096) int maxOutputTokens,
-        @DefaultValue @Valid RagProperties rag) {
+        @DefaultValue @Valid RagProperties rag,
+        @DefaultValue @Valid AgentBudgetProperties budget) {
     public AgentProperties {
+        Assert.isTrue(budget.contextTokens() > maxOutputTokens, "上下文预算必须大于输出预留");
         Assert.isTrue(modelTimeout.isPositive() && modelTimeout.compareTo(Duration.ofMinutes(5)) <= 0,
                 "模型超时必须大于零且不超过五分钟");
         Assert.isTrue(requestTimeout.isPositive() && requestTimeout.compareTo(Duration.ofMinutes(5)) <= 0,

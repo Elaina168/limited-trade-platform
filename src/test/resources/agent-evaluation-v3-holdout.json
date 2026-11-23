@@ -1,0 +1,59 @@
+[
+  {
+    "id": "v3-repeat-payment",
+    "steps": [
+      {
+        "question": "模拟支付请求重复提交，会再次扣减库存吗？",
+        "expected": {
+          "tools": [
+            "search_trade_rules"
+          ],
+          "documents": [
+            "payment"
+          ],
+          "any": [
+            "不会",
+            "不再次"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "v3-expiry-lookup",
+    "steps": [
+      {
+        "question": "请帮我查看本人订单9305的支付截止时间。",
+        "expected": {
+          "tools": [
+            "get_my_order"
+          ],
+          "contains": [
+            "9305",
+            "10:19"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "v3-receipt-repeat",
+    "steps": [
+      {
+        "question": "重复确认已完成订单的收货，会覆盖原来的收货时间吗？",
+        "expected": {
+          "tools": [
+            "search_trade_rules"
+          ],
+          "documents": [
+            "fulfillment"
+          ],
+          "any": [
+            "不会",
+            "不覆盖"
+          ]
+        }
+      }
+    ]
+  }
+]
