@@ -1,0 +1,186 @@
+[
+  {
+    "id": "c2-01",
+    "query": "能在一个品类里按商品名继续找吗",
+    "document": "catalog-search",
+    "evidence": "分类与关键词同时生效"
+  },
+  {
+    "id": "c2-02",
+    "query": "搜商品名时，百分号是不是能匹配任意文字",
+    "document": "catalog-search",
+    "evidence": "不作为通配符"
+  },
+  {
+    "id": "c2-03",
+    "query": "商品翻过最后一页，查询结果的 total 会变成 0 吗",
+    "document": "catalog-search",
+    "evidence": "当前页为空"
+  },
+  {
+    "id": "c2-04",
+    "query": "活动页面还剩几个名额，就代表实物库存已经锁给活动了吗",
+    "document": "activity-availability",
+    "evidence": "不代表为活动预留了商品库存"
+  },
+  {
+    "id": "c2-05",
+    "query": "限量活动结束的那一秒提交购买可以吗",
+    "document": "activity-availability",
+    "evidence": "结束时刻不包含在内"
+  },
+  {
+    "id": "c2-06",
+    "query": "可以买别的商品并使用这个活动的名额吗",
+    "document": "activity-availability",
+    "evidence": "活动绑定商品必须与本次购买的商品一致"
+  },
+  {
+    "id": "c2-07",
+    "query": "优惠券已经领过一次，重复点领取会再次扣减发放配额吗",
+    "document": "coupon-claim",
+    "evidence": "不会重复消耗发放名额"
+  },
+  {
+    "id": "c2-08",
+    "query": "刚好到了活动券的领券截止时刻，还能首次领取吗",
+    "document": "coupon-claim",
+    "evidence": "严格早于领取结束时间"
+  },
+  {
+    "id": "c2-09",
+    "query": "已经领到优惠券，领券时间和使用时间一定一样吗",
+    "document": "coupon-claim",
+    "evidence": "领取时间和使用时间分别由券规则确定"
+  },
+  {
+    "id": "c2-10",
+    "query": "买了几件活动商品，计算满减门槛用原价小计还是优惠后金额",
+    "document": "coupon-use",
+    "evidence": "单价乘购买数量"
+  },
+  {
+    "id": "c2-11",
+    "query": "使用活动券下单未付款，这张券能给另一笔订单先用吗",
+    "document": "coupon-use",
+    "evidence": "不能给另一笔订单使用"
+  },
+  {
+    "id": "c2-12",
+    "query": "待支付的用券订单超时关闭，平台会不会多发放一张优惠券",
+    "document": "coupon-use",
+    "evidence": "不增加券的剩余发放量"
+  },
+  {
+    "id": "c2-13",
+    "query": "把商品先放进购物车算不算把这件库存留给我",
+    "document": "cart-checkout",
+    "evidence": "不预留库存"
+  },
+  {
+    "id": "c2-14",
+    "query": "购物车一次至多选多少种商品结账，购买件数从哪里取",
+    "document": "cart-checkout",
+    "evidence": "一次可选最多 50 种商品"
+  },
+  {
+    "id": "c2-15",
+    "query": "购物车里只勾选两件结算，另外几件会一起被移走吗",
+    "document": "cart-checkout",
+    "evidence": "未选中的商品继续保留"
+  },
+  {
+    "id": "c2-16",
+    "query": "删掉默认收货地址后系统会自己挑一个替换吗",
+    "document": "address-book",
+    "evidence": "不会自动把其他地址设为默认"
+  },
+  {
+    "id": "c2-17",
+    "query": "下单后在地址簿修改收件信息，会同步更新旧订单的收货地址吗",
+    "document": "address-book",
+    "evidence": "不会改动历史订单的地址快照"
+  },
+  {
+    "id": "c2-18",
+    "query": "第一次新建收货地址是否需要手动设为默认",
+    "document": "address-book",
+    "evidence": "第一次新增地址会设为默认地址"
+  },
+  {
+    "id": "c2-19",
+    "query": "下单请求重复发送相同的 requestId，会不会建两单扣两次库存",
+    "document": "order-retry",
+    "evidence": "不会再创建订单或扣库存"
+  },
+  {
+    "id": "c2-20",
+    "query": "重试之前的单商品下单却修改了购买数量，相同 requestId 还能用吗",
+    "document": "order-retry",
+    "evidence": "会返回 409"
+  },
+  {
+    "id": "c2-21",
+    "query": "提交后购物车里勾选的商品消失了，还能用原请求标识找回第一次结算结果吗",
+    "document": "order-retry",
+    "evidence": "仍能返回第一次的成交结果"
+  },
+  {
+    "id": "c2-22",
+    "query": "在交易助手点开历史看一遍，24 小时会重新计时吗",
+    "document": "assistant-history",
+    "evidence": "只读历史不会续期"
+  },
+  {
+    "id": "c2-23",
+    "query": "助手一共只能有十个会话时，清空旧聊天能释放一个名额吗",
+    "document": "assistant-history",
+    "evidence": "继续占用一个名额"
+  },
+  {
+    "id": "c2-24",
+    "query": "助手还能看到页面展示的全部五十轮历史吗",
+    "document": "assistant-history",
+    "evidence": "不一定仍在模型上下文里"
+  },
+  {
+    "id": "c2-25",
+    "query": "商城可不可以申请银行贷款，年利率是多少？",
+    "document": null
+  },
+  {
+    "id": "c2-26",
+    "query": "商品损坏时申请退货的邮费应该谁付？",
+    "document": null
+  },
+  {
+    "id": "c2-27",
+    "query": "参加宠物用品活动可以开发票抵扣增值税吗？",
+    "document": null
+  },
+  {
+    "id": "c2-28",
+    "query": "平台在海外有几个仓库，可以从海外仓直邮吗？",
+    "document": null
+  },
+  {
+    "id": "c2-29",
+    "query": "活动优惠券能否和信用卡积分兑换的返现叠加？",
+    "document": null
+  },
+  {
+    "id": "c2-30",
+    "query": "会员等级升级后下个月赠送多少积分？",
+    "document": null
+  },
+  {
+    "id": "c2-31",
+    "query": "跨境订单的关税由收件人还是平台支付？",
+    "document": null
+  },
+  {
+    "id": "c2-32",
+    "query": "可以把商城账户中的储值余额转给其他会员吗？",
+    "document": null
+  }
+]

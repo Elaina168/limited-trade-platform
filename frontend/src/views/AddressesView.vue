@@ -3,6 +3,7 @@ import { onUnmounted, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth.ts'
 import { addresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from '../api/checkout.ts'
 import { errorMessage, SessionChangedError } from '../api/http.ts'
+import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
 import type { Address, AddressInput } from '../types/checkout.ts'
 
 const auth = useAuthStore()
@@ -10,6 +11,7 @@ const list = ref<Address[]>([])
 const editing = ref<number | null>(null)
 const form = reactive<AddressInput>({ recipientName: '', phone: '', province: '', city: '', district: '', detailAddress: '' })
 const busy = ref(false)
+const loaded = ref(false)
 const saving = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -28,13 +30,12 @@ async function load() {
   const current = ++sequence
   busy.value = true
   error.value = ''
-  list.value = []
-  try { const data = await addresses(); if (current === sequence) list.value = data }
+  try { const data = await addresses(); if (current === sequence) { list.value = data; loaded.value = true } }
   catch (cause) { if (current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
   finally { if (current === sequence) busy.value = false }
 }
-async function mutate(action: () => Promise<unknown>, message: string, clearForm = false) {
-  if (saving.value || auth.busy) return
+async function mutate(action: () => Promise<unknown>, matches: (data: Address[]) => boolean, message: string, clearForm = false, observed = message) {
+  if (busy.value || saving.value || auth.busy) return
   const current = ++operation
   saving.value = true
   error.value = ''
@@ -46,7 +47,15 @@ async function mutate(action: () => Promise<unknown>, message: string, clearForm
     notice.value = message
     await load()
   } catch (cause) {
-    if (current === operation && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause)
+    if (current !== operation || cause instanceof SessionChangedError) return
+    if (!canReconcileWrite(cause)) { error.value = errorMessage(cause); return }
+    notice.value = '正在核对地址簿…'
+    const result = await reconcileWrite(addresses, matches, () => current === operation)
+    if (current !== operation) return
+    if (result?.snapshot) list.value = result.snapshot
+    if (result?.confirmed && clearForm) reset()
+    notice.value = !result ? '' : result.confirmed ? observed : result.snapshot
+      ? '已更新地址簿，暂未确认本次修改。' : '暂时无法核对地址簿。'
   } finally { if (current === operation) saving.value = false }
 }
 function save() {
@@ -58,14 +67,21 @@ function save() {
     return
   }
   const id = editing.value
-  void mutate(() => id === null ? createAddress(data) : updateAddress(id, data), '地址已保存。', true)
+  const previousIds = loaded.value ? new Set(list.value.map(item => item.id)) : null
+  void mutate(
+    () => id === null ? createAddress(data) : updateAddress(id, data),
+    snapshot => snapshot.some(item => (id === null ? previousIds !== null && !previousIds.has(item.id) : item.id === id)
+      && (Object.keys(data) as (keyof AddressInput)[]).every(key => item[key] === data[key])),
+    '地址已保存。', true, id === null ? '已在地址簿中查到一条匹配的新地址。' : '地址已保存。',
+  )
 }
 function remove(item: Address) {
   if (!window.confirm(`删除「${item.recipientName}」的这条收货地址？`)) return
-  void mutate(() => deleteAddress(item.id), '地址已删除。', editing.value === item.id)
+  void mutate(() => deleteAddress(item.id), snapshot => !snapshot.some(row => row.id === item.id),
+    '地址已删除。', editing.value === item.id)
 }
 watch(() => auth.user?.id, () => {
-  operation++; sequence++; saving.value = false; list.value = []; notice.value = ''; reset()
+  operation++; sequence++; busy.value = false; loaded.value = false; saving.value = false; list.value = []; notice.value = ''; reset()
 }, { flush: 'sync' })
 watch(() => auth.status, status => { if (status === 'authenticated') void load() }, { immediate: true })
 onUnmounted(() => { sequence++; operation++ })
@@ -84,9 +100,9 @@ onUnmounted(() => { sequence++; operation++ })
       <h2>{{ item.recipientName }} <span v-if="item.defaultAddress" class="role-badge">默认地址</span></h2>
       <p>{{ item.phone }}</p><p class="muted">{{ item.province }} {{ item.city }} {{ item.district }} {{ item.detailAddress }}</p>
       <div class="business-actions">
-        <el-button :disabled="saving || auth.busy" @click="edit(item)">编辑</el-button>
-        <el-button :disabled="saving || auth.busy || item.defaultAddress" @click="mutate(() => setDefaultAddress(item.id), '默认地址已更新。')">设为默认</el-button>
-        <el-button :disabled="saving || auth.busy" @click="remove(item)">删除</el-button>
+        <el-button :disabled="busy || saving || auth.busy" @click="edit(item)">编辑</el-button>
+        <el-button :disabled="busy || saving || auth.busy || item.defaultAddress" @click="mutate(() => setDefaultAddress(item.id), snapshot => snapshot.some(row => row.id === item.id && row.defaultAddress), '默认地址已更新。')">设为默认</el-button>
+        <el-button :disabled="busy || saving || auth.busy" @click="remove(item)">删除</el-button>
       </div>
     </article>
   </div>
@@ -101,7 +117,7 @@ onUnmounted(() => { sequence++; operation++ })
         <div class="field"><label for="district">区县</label><input id="district" v-model="form.district" maxlength="50" /></div>
         <div class="field"><label for="detailAddress">详细地址</label><input id="detailAddress" v-model="form.detailAddress" maxlength="200" autocomplete="street-address" /></div>
       </fieldset>
-      <div class="business-actions"><el-button type="primary" native-type="submit" :loading="saving" :disabled="auth.busy">保存地址</el-button><el-button v-if="editing !== null" :disabled="saving || auth.busy" @click="reset">取消编辑</el-button></div>
+      <div class="business-actions"><el-button type="primary" native-type="submit" :loading="saving" :disabled="busy || auth.busy">保存地址</el-button><el-button v-if="editing !== null" :disabled="saving || auth.busy" @click="reset">取消编辑</el-button></div>
     </form>
   </section>
 </template>

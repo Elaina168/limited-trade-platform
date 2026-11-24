@@ -230,16 +230,33 @@ class TradeAgentProtocolTest {
         var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
         var chunk = new com.elaina.limitedtrade.agent.rag.RuleChunk("chunk-1", "payment", "支付期限",
                 "knowledge/payment.md", 4, 4, "订单创建15分钟后到期。", 0.9);
+        var unused = new com.elaina.limitedtrade.agent.rag.RuleChunk("unused-2", "coupon", "领券",
+                "knowledge/coupon-claim.md", 5, 5, "活动支持领券。", 0.8);
         when(knowledge.search("支付期限"))
-                .thenReturn(new com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.SearchResult("MATCHED", List.of(chunk)));
+                .thenReturn(new com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.SearchResult("MATCHED", List.of(chunk, unused)));
         replies.add(toolReply("search_trade_rules", "{\"query\":\"支付期限\"}"));
-        replies.add(answerReply());
+        replies.add(answerReply().replace("支付期限以订单expiresAt为准。", "支付期限以订单expiresAt为准。[[chunk-1]]"));
         runner().withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge).run(context -> {
             var result = context.getBean(TradeAgentService.class).chat(7301, "支付期限");
             assertThat(result.knowledgeSources()).containsExactly(chunk);
             assertThat(result.sources()).isEmpty();
         });
         assertThat(requests.getFirst().path("tools").toString()).contains("search_trade_rules").doesNotContain("\"name\":\"get_trade_rules\"");
+    }
+
+    @Test void ragDoesNotPublishUnknownCitationsOrUnsupportedRules() throws Exception {
+        var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
+        var coupon = new com.elaina.limitedtrade.agent.rag.RuleChunk("coupon-1", "coupon", "领券",
+                "knowledge/coupon-claim.md", 5, 5, "活动支持领券。", 0.8);
+        when(knowledge.search("信用卡返现是否叠券")).thenReturn(
+                new com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.SearchResult("MATCHED", List.of(coupon)));
+        replies.add(toolReply("search_trade_rules", "{\"query\":\"信用卡返现是否叠券\"}"));
+        replies.add(answerReply().replace("没有待支付订单。支付期限以订单expiresAt为准。", "可以叠加。[[invented-1]]"));
+        runner().withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge).run(context -> {
+            var result = context.getBean(TradeAgentService.class).chat(7301, "信用卡返现是否叠券");
+            assertThat(result.answer()).contains("无法确认").doesNotContain("可以叠加", "invented-1");
+            assertThat(result.knowledgeSources()).isEmpty();
+        });
     }
 
     @Test void ruleFollowUpRewritesOnlyTheToolQueryUsingThePreviousUserMessage() throws Exception {
@@ -374,6 +391,7 @@ class TradeAgentProtocolTest {
         replies.add(answerReply());
         runner().withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge).run(context -> {
             var result = context.getBean(TradeAgentService.class).chat(7301, "退货邮费");
+            assertThat(result.answer()).contains("无法确认");
             assertThat(result.knowledgeSources()).isEmpty();
             assertThat(result.sources()).isEmpty();
         });

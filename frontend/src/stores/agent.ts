@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from './auth.ts'
 import { clearConversation, createConversation, deleteConversation, listConversations, readConversation, streamMessage } from '../api/agent.ts'
-import { errorMessage, HttpError, onSessionChange, RequestError, SessionChangedError } from '../api/http.ts'
+import { errorMessage, HttpError, onSessionChange, isUncertainWrite, RequestError, SessionChangedError } from '../api/http.ts'
 import { AgentStreamError } from '../utils/agentStream.ts'
 import type { ChatMessage, ConversationHistory, CreatedConversation } from '../types/agent.ts'
 
@@ -53,10 +53,10 @@ export const useAgentStore = defineStore('agent', () => {
   function failure(cause: unknown, creating = false) {
     const code = cause instanceof HttpError ? cause.status : cause instanceof AgentStreamError ? cause.code : null
     if (code === 404) return creating ? '交易助手当前不可用，请稍后重试。' : '会话已过期或不可访问，请新建会话后继续。'
-    if (code === 409) return creating ? '未过期会话数量已达上限，请继续现有会话或删除一个会话。' : '会话正在处理其他请求或已发生变化，请稍后手动操作。'
+    if (code === 409) return creating ? '未过期会话数量已达上限，请继续现有会话或删除一个会话。' : '会话正在处理其他请求或已发生变化，请稍后再试。'
     if (code === 413) return '问题和当轮查询结果超出助手上下文额度，请缩小问题范围。'
     if (code === 429) return '助手提问、并发或本月费用额度已满，请稍后查看。'
-    if (code === 502 || code === 504 || cause instanceof DOMException && cause.name === 'TimeoutError') return '助手未能在等待时间内完成，回答是否保存尚未确认，请勿自动重复发送。'
+    if (code === 502 || code === 504 || cause instanceof DOMException && cause.name === 'TimeoutError') return '助手未能在等待时间内完成。'
     return errorMessage(cause)
   }
   function unavailable(cause: unknown) { return cause instanceof HttpError && cause.status === 404 || cause instanceof AgentStreamError && cause.code === 404 }
@@ -129,6 +129,7 @@ export const useAgentStore = defineStore('agent', () => {
     if (!canSend.value) return
     const question = input.trim()
     if (!question || question.length > 2000) { error.value = '请输入1至2000字符的问题。'; return }
+    const clientTurnId = crypto.randomUUID()
     const current = ++generation
     controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(75_000)])
@@ -140,6 +141,7 @@ export const useAgentStore = defineStore('agent', () => {
     messages.value = [...saved, user, row]
     // 从响应式数组取得代理，后续增量修改才能驱动视图更新。
     const assistant = messages.value.at(-1)!
+    let submitted = false
     let creating = !conversationId.value
     try {
       if (creating) {
@@ -152,7 +154,9 @@ export const useAgentStore = defineStore('agent', () => {
           conversations.value = [created, ...conversations.value].slice(0, 5)
         }
       }
-      await streamMessage(conversationId.value!, question, event => {
+      const id = conversationId.value!
+      submitted = true
+      await streamMessage(id, question, event => {
         if (current !== generation) return
         if (event.type === 'start') { assistant.state = 'streaming'; notice.value = '正在查询并生成回答…' }
         if (event.type === 'delta') { assistant.state = 'streaming'; assistant.text += event.text }
@@ -162,7 +166,7 @@ export const useAgentStore = defineStore('agent', () => {
           messages.value = messages.value.slice(-100)
           notice.value = '回答已完成并确认保存。'
         }
-      }, signal)
+      }, signal, clientTurnId)
       if (current === generation) await refreshPage(1, signal, current)
     } catch (cause) {
       if (current !== generation || cause instanceof SessionChangedError) return
@@ -178,9 +182,78 @@ export const useAgentStore = defineStore('agent', () => {
         messages.value = []
         conversations.value = conversations.value.filter(item => item.conversationId !== missing)
       }
-      error.value = cause instanceof DOMException && cause.name === 'AbortError' ? '' : failure(cause, creating)
-      notice.value = '本轮未确认完成，结果可能已保存；请勿自动重复发送，可以新建或清空会话后继续。'
+      const stopped = assistant.state === 'stopped'
+      error.value = stopped ? '' : failure(cause, creating)
+      notice.value = stopped ? '已停止生成。' : '本轮未完成。'
+      if (submitted && conversationId.value && (stopped || !(cause instanceof AgentStreamError) && isUncertainWrite(cause))) {
+        await recoverTurn(conversationId.value, clientTurnId, current)
+      } else if (creating && isUncertainWrite(cause)) {
+        await recoverChange('new', null, current)
+      }
     } finally { if (current === generation) { busy.value = false; action.value = null; controller = null } }
+  }
+  async function recoverTurn(id: string, clientTurnId: string, current: number) {
+    controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)])
+    action.value = 'history'; error.value = ''; notice.value = '正在恢复本轮回答…'
+    let idle = false
+    for (const delay of [0, 250, 500, 1000, 2000, 3000]) {
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+      if (current !== generation) return
+      if (signal.aborted) break
+      try {
+        const history = await readConversation(id, signal)
+        if (current !== generation) return
+        if (history.turns.some(turn => turn.clientTurnId === clientTurnId)) {
+          showHistory(history)
+          notice.value = '已恢复本轮保存的问答。'
+          return
+        }
+        if (!history.generating && idle) {
+          notice.value = '本轮未保存回答。'
+          return
+        }
+        idle = !history.generating
+      } catch (cause) {
+        if (current !== generation || cause instanceof SessionChangedError) return
+        if (!isUncertainWrite(cause)) {
+          error.value = failure(cause)
+          break
+        }
+        idle = false
+      }
+    }
+    if (current === generation) notice.value = '暂时无法确认本轮结果，已保存的回答会在会话历史中显示。'
+  }
+
+  async function recoverChange(kind: 'new' | 'clear' | 'delete', id: string | null, current: number) {
+    controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)])
+    notice.value = '正在重新读取会话状态…'
+    let confirmed = false
+    try {
+      if (id) {
+        try {
+          const history = await readConversation(id, signal)
+          if (current !== generation) return
+          confirmed = kind === 'clear' && history.turns.length === 0 && !history.generating
+          showHistory(history)
+        } catch (cause) {
+          if (current !== generation || cause instanceof SessionChangedError) return
+          if (!unavailable(cause)) throw cause
+          remember(null); messages.value = []
+          confirmed = kind === 'delete'
+        }
+      }
+      await refreshPage(1, signal, current)
+      if (current !== generation) return
+      if (confirmed) error.value = ''
+      notice.value = confirmed ? (kind === 'clear' ? '历史已清空。' : '会话已删除。') : '已更新会话列表，暂时无法确认本次操作。'
+    } catch (cause) {
+      if (current !== generation || cause instanceof SessionChangedError) return
+      error.value ||= failure(cause)
+      notice.value = confirmed ? '操作结果已核对，会话列表暂时无法更新。' : '暂时无法确认本次操作。'
+    }
   }
   function stop() { if (canStop.value) { controller?.abort(); notice.value = '正在停止生成…' } }
   async function change(kind: 'new' | 'clear' | 'delete') {
@@ -189,6 +262,7 @@ export const useAgentStore = defineStore('agent', () => {
     controller = new AbortController()
     busy.value = true; action.value = kind; error.value = ''
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])
+    const targetId = kind === 'new' ? null : conversationId.value
     let applied = false
     try {
       if (kind === 'new') {
@@ -214,13 +288,14 @@ export const useAgentStore = defineStore('agent', () => {
       } else {
         if (kind !== 'new' && unavailable(cause)) { remember(null); messages.value = [] }
         error.value = failure(cause, kind === 'new')
+        if (isUncertainWrite(cause)) await recoverChange(kind, targetId, current)
       }
     } finally { if (current === generation) { busy.value = false; action.value = null; controller = null } }
   }
   function open() { active = true; return browse() }
   function leave() {
     active = false
-    if (busy.value) { interrupt(); notice.value = '已离开并停止请求，未完成回答是否保存尚未确认。' }
+    if (busy.value) interrupt()
   }
   onScopeDispose(() => { unsubscribe(); controller?.abort() })
   return {

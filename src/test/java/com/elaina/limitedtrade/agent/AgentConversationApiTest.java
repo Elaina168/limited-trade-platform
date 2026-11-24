@@ -71,7 +71,7 @@ class AgentConversationApiTest {
         var path = "/api/agent/conversations/" + id;
         var now = LocalDateTime.now();
         when(service.readHistory(7301, id)).thenReturn(new AgentConversationService.ConversationHistory(
-                id, now, false, List.of(new AgentConversationService.VisibleTurn("问题", "答案", List.of(), List.of()))));
+                id, now, false, List.of(new AgentConversationService.VisibleTurn("问题", "答案", List.of(), List.of(), null))));
         mvc.perform(get("/api/agent/conversations")).andExpect(status().isUnauthorized());
         mvc.perform(get(path + "/messages")).andExpect(status().isUnauthorized());
         mvc.perform(delete(path).with(csrf())).andExpect(status().isUnauthorized());

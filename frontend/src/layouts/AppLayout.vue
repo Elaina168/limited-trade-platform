@@ -48,8 +48,7 @@ const menuOpen = ref(false)
       <main id="main" class="page-content">
         <el-alert v-if="auth.error" :title="auth.error" type="error" :closable="false" show-icon />
         <div v-if="auth.status === 'failed'" class="connection-inline" role="alert">
-          <p>当前身份尚未确认，请重新连接。</p>
-          <el-button :loading="auth.busy" @click="auth.restore(true)">重新连接</el-button>
+          <p>暂时无法读取登录状态，重新联网或返回页面时会自动连接。</p>
         </div>
         <template v-else-if="!route.meta.requiresAuth || auth.status === 'authenticated' || auth.status === 'loading' && auth.user !== null">
           <PendingOrderBanner v-if="auth.user" />

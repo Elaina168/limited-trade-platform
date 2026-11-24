@@ -90,6 +90,10 @@ public class AgentConversationService {
     }
 
     public PreparedTurn prepare(long userId, String id, String message) {
+        return prepare(userId, id, message, null);
+    }
+
+    public PreparedTurn prepare(long userId, String id, String message, UUID clientTurnId) {
         purgeExpired(userId);
         return transaction.execute(status -> {
             var now = LocalDateTime.now();
@@ -98,7 +102,7 @@ public class AgentConversationService {
                 throw conflict("当前会话正在生成回答");
             String token = UUID.randomUUID().toString();
             mapper.claim(id, token, now.plus(properties.requestTimeout()).plusSeconds(30));
-            return new PreparedTurn(userId, id, message, conversation.revision(), token, mapper.findTurns(id));
+            return new PreparedTurn(userId, id, message, conversation.revision(), token, mapper.findTurns(id), clientTurnId);
         });
     }
 
@@ -115,7 +119,7 @@ public class AgentConversationService {
         String encoded = history.encode(turn.messages());
         var response = turn.response();
         String visible = encodeVisible(new VisibleTurn(prepared.message(), response.answer(),
-                response.sources(), response.knowledgeSources()));
+                response.sources(), response.knowledgeSources(), prepared.clientTurnId()));
         transaction.executeWithoutResult(status -> {
             var now = LocalDateTime.now();
             var current = owned(prepared.userId(), prepared.id(), now);
@@ -187,6 +191,6 @@ public class AgentConversationService {
     public record ConversationPage(int page, int size, boolean hasNext, List<CreatedConversation> items) { }
     public record ConversationHistory(String conversationId, LocalDateTime expiresAt, boolean generating,
                                       List<VisibleTurn> turns) { }
-    public record VisibleTurn(String question, String answer, List<TradeRule> sources, List<RuleChunk> knowledgeSources) { }
-    public record PreparedTurn(long userId, String id, String message, long revision, String token, List<String> turns) { }
+    public record VisibleTurn(String question, String answer, List<TradeRule> sources, List<RuleChunk> knowledgeSources, UUID clientTurnId) { }
+    public record PreparedTurn(long userId, String id, String message, long revision, String token, List<String> turns, UUID clientTurnId) { }
 }

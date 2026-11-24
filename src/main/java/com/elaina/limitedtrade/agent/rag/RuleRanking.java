@@ -11,12 +11,14 @@ import java.util.regex.Pattern;
 
 final class RuleRanking {
     private static final int RRF_K = 60;
-    private static final Pattern SYMBOL = Pattern.compile("[a-z0-9_]+");
+    private static final Pattern SYMBOL = Pattern.compile("[a-z0-9_]+(?:-[a-z0-9_]+)*");
     private static final Set<String> EXACT = Set.of(
             "expiresat", "pending_payment", "paid", "canceled", "closed", "shipped", "completed", "rabbitmq",
             "markpaid", "markcanceled", "markclosed", "markshipped", "markcompleted", "findownedorder",
             "requestid", "total", "404", "支付截止", "付款期限", "模拟支付", "定时扫描", "超时关单",
-            "主动取消", "确认收货", "地址快照", "优惠券占用", "活动名额", "重复支付", "重复取消");
+            "主动取消", "确认收货", "地址快照", "优惠券占用", "活动名额", "重复支付", "重复取消",
+            "商品分类", "商品搜索", "购物车结算", "收货地址", "默认地址", "满减门槛", "领取时间",
+            "发放名额", "使用截止", "请求标识", "retry-after", "会话历史", "模型上下文");
     private static final Set<String> RELATED = Set.of(
             "支付", "付款", "未付款", "待支付", "取消", "关单", "关闭", "重复", "库存", "回补", "扫描",
             "优惠券", "订单状态", "确认", "收货时间", "发货", "运单号", "手机号", "分页", "当前页",

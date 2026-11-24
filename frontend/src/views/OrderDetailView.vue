@@ -5,8 +5,9 @@ import { useAuthStore } from '../stores/auth.ts'
 import { useCheckoutStore } from '../stores/checkout.ts'
 import { readOrder } from '../api/checkout.ts'
 import { changeOrder } from '../api/orders.ts'
-import { errorMessage, SessionChangedError } from '../api/http.ts'
+import { errorMessage, HttpError, SessionChangedError } from '../api/http.ts'
 import { availableOrderActions, orderActionLabels, orderStatusLabels } from '../utils/orders.ts'
+import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
 import type { Order, OrderAction } from '../types/checkout.ts'
 
 const auth = useAuthStore()
@@ -22,12 +23,18 @@ const now = ref(Date.now())
 const timer = window.setInterval(() => { now.value = Date.now() }, 1000)
 let sequence = 0
 let operation = 0
+let nextExpiryRead = 0
 const actions = computed(() => order.value ? availableOrderActions(order.value, now.value) : [])
 const blocked = computed(() => busy.value || acting.value !== null || auth.busy || refreshRequired.value)
 const secondsLeft = computed(() => order.value ? Math.max(0, Math.ceil((new Date(order.value.expiresAt).getTime() - now.value) / 1000)) : 0)
 const countdown = computed(() => `${Math.floor(secondsLeft.value / 60)}分${secondsLeft.value % 60}秒`)
 function reset() {
-  sequence++; operation++; order.value = null; acting.value = null; refreshRequired.value = false; error.value = ''; notice.value = ''
+  sequence++; operation++; nextExpiryRead = 0; order.value = null; acting.value = null; refreshRequired.value = false; error.value = ''; notice.value = ''
+}
+function applyOrder(data: Order) {
+  order.value = data
+  checkout.confirmKnownOrder(data)
+  refreshRequired.value = false
 }
 async function load() {
   const current = ++sequence
@@ -37,11 +44,10 @@ async function load() {
   try {
     const data = await readOrder(id)
     if (current !== sequence) return
-    order.value = data
-    checkout.confirmKnownOrder(data)
-    refreshRequired.value = false
+    applyOrder(data)
   } catch (cause) {
     if (current === sequence && !(cause instanceof SessionChangedError)) {
+      if (cause instanceof HttpError && cause.status === 404) order.value = null
       error.value = errorMessage(cause); refreshRequired.value = true
     }
   } finally { if (current === sequence) busy.value = false }
@@ -50,30 +56,53 @@ async function act(action: OrderAction) {
   if (blocked.value || !order.value || !actions.value.includes(action)) return
   if (action === 'cancel' && !window.confirm('确认取消这笔订单？取消后将归还库存并释放占用的优惠券。')) return
   if (action === 'receive' && !window.confirm('请确认已收到商品，再确认收货。')) return
+  const id = order.value.id
+  const success = action === 'pay' ? '模拟支付成功。' : action === 'cancel' ? '订单已取消，库存与优惠券占用已释放。' : '已确认收货。'
   const current = ++operation
-  sequence++
   acting.value = action; error.value = ''; notice.value = ''
   try {
-    const data = await changeOrder(order.value.id, action)
+    const data = await changeOrder(id, action)
     if (current !== operation) return
     // 同时结束已作废的焦点读取状态，避免迟到GET覆盖操作结果或让页面一直忙碌。
     sequence++; busy.value = false
-    order.value = data
-    checkout.confirmKnownOrder(data)
-    refreshRequired.value = false; error.value = ''
-    notice.value = action === 'pay' ? '模拟支付成功。' : action === 'cancel' ? '订单已取消，库存与优惠券占用已释放。' : '已确认收货。'
+    applyOrder(data)
+    error.value = ''
+    notice.value = success
   } catch (cause) {
-    if (current !== operation) return
+    if (current !== operation || cause instanceof SessionChangedError) return
     sequence++; busy.value = false
-    refreshRequired.value = true
-    error.value = errorMessage(cause)
-    notice.value = '请先刷新订单确认当前状态，再决定下一步操作。'
+    if (!canReconcileWrite(cause)) { error.value = errorMessage(cause); return }
+    notice.value = '正在核对订单状态…'
+    const result = await reconcileWrite(() => readOrder(id), data =>
+      action === 'pay' ? ['PAID', 'SHIPPED', 'COMPLETED'].includes(data.status)
+        : data.status === (action === 'cancel' ? 'CANCELED' : 'COMPLETED'),
+    () => current === operation)
+    if (!result || current !== operation) {
+      if (current === operation) notice.value = ''
+      return
+    }
+    if (result.snapshot) {
+      applyOrder(result.snapshot)
+      notice.value = result.confirmed ? success : `已更新订单状态为「${orderStatusLabels[result.snapshot.status]}」，未确认本次操作完成。`
+    } else {
+      refreshRequired.value = true
+      notice.value = '暂时无法核对订单状态。'
+    }
   } finally { if (current === operation) acting.value = null }
 }
 watch([() => route.params.id, () => auth.user?.id], reset, { flush: 'sync' })
 watch([() => route.params.id, () => auth.user?.id, () => auth.status], () => {
-  if (auth.status === 'authenticated') void load()
+  if (auth.status === 'authenticated' && !acting.value) void load()
 }, { immediate: true })
+watch(now, time => {
+  if (document.hidden || auth.status !== 'authenticated' || busy.value || acting.value || order.value?.status !== 'PENDING_PAYMENT'
+      || time < nextExpiryRead) return
+  const expiry = new Date(order.value.expiresAt).getTime()
+  if (time < expiry) return
+  // 支付到期后由后端异步关单，页面定期读取直至订单离开待支付状态。
+  nextExpiryRead = time + (time - expiry < 60_000 ? 5_000 : 30_000)
+  void load()
+})
 onUnmounted(() => { sequence++; operation++; window.clearInterval(timer) })
 </script>
 
@@ -86,9 +115,10 @@ onUnmounted(() => { sequence++; operation++; window.clearInterval(timer) })
   <template v-if="order">
     <section class="market-card order-result">
       <div class="section-heading"><h2>订单 #{{ order.id }}</h2><span class="role-badge">{{ orderStatusLabels[order.status] }}</span></div>
+      <RouterLink class="text-link" :to="{ name: 'agent', query: { orderId: order.id } }">问这笔订单</RouterLink>
       <p class="price">应付 ¥{{ Number(order.totalAmount).toFixed(2) }}</p>
       <p>原价 ¥{{ Number(order.originalAmount).toFixed(2) }} · 优惠 ¥{{ Number(order.discountAmount).toFixed(2) }}</p>
-      <p v-if="order.status === 'PENDING_PAYMENT'" class="operation-notice">{{ secondsLeft > 0 ? `支付剩余 ${countdown}` : '已过支付截止时间，请刷新确认订单状态。' }}</p>
+      <p v-if="order.status === 'PENDING_PAYMENT'" class="operation-notice">{{ secondsLeft > 0 ? `支付剩余 ${countdown}` : '已过支付截止时间，正在自动核对订单状态。' }}</p>
       <div class="business-actions"><el-button v-for="action in actions" :key="action" :type="action === 'pay' ? 'primary' : 'default'" :disabled="blocked" :loading="acting === action" @click="act(action)">{{ orderActionLabels[action] }}</el-button></div>
       <p v-if="order.status === 'PENDING_PAYMENT'" class="muted">模拟支付用于演示订单状态流转，不会产生真实扣款。</p>
     </section>

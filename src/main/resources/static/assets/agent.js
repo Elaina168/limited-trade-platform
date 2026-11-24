@@ -1,22 +1,26 @@
-import { write, streamWrite, ApiError, UserError, errorMessage } from './api.js';
+import { api, write, streamWrite, ApiError, errorMessage, resultUnavailable } from './api.js';
 import { StreamEventError } from './sse.js';
 import { el, heading } from './ui.js';
 
 let session = null;
 let dispose = null;
 const storageKey = userId => `limited-market:agent:${userId}`;
+const pendingKey = userId => `limited-market:agent-pending:${userId}`;
 
 export function disposeAgentPage() { if (dispose) dispose(); dispose = null; }
 export function resetAgentIdentity(userId) {
   disposeAgentPage();
-  if (userId != null) sessionStorage.removeItem(storageKey(userId));
+  if (userId != null) {
+    sessionStorage.removeItem(storageKey(userId));
+    sessionStorage.removeItem(pendingKey(userId));
+  }
   session = null;
 }
 
 function failureMessage(error, creating) {
   if (error instanceof ApiError || error instanceof StreamEventError) {
     if (error.status === 404) return creating ? '交易助手当前不可用，请稍后重试。' : '会话已过期或不可访问，请新建会话后继续。';
-    if (error.status === 409) return creating ? '会话数量已达上限，可清空当前会话继续使用，或稍后再试。' : '当前会话正在处理上一请求或已发生变化，请稍后手动重试。';
+    if (error.status === 409) return creating ? '会话数量已达上限，可清空当前会话继续使用，或稍后再试。' : '当前会话正在处理上一请求或已发生变化。';
     if (error.status === 502 || error.status === 504) return '助手暂时未能完成回答，请稍后重试。';
     if (error instanceof StreamEventError) return error.message;
   }
@@ -24,9 +28,10 @@ function failureMessage(error, creating) {
 }
 
 export function agentPage(user, current) {
-  if (!session || session.userId !== user.id) session = { userId: user.id, id: sessionStorage.getItem(storageKey(user.id)), messages: [] };
+  if (!session || session.userId !== user.id) session = { userId: user.id, id: sessionStorage.getItem(storageKey(user.id)), messages: [],
+    pending: JSON.parse(sessionStorage.getItem(pendingKey(user.id))) };
   const state = session;
-  let alive = true, busy = false, controller = null, activeAssistant = null;
+  let alive = true, busy = false, controller = null, activeAssistant = null, checking = false;
   const valid = () => alive && current();
   const refs = new Map();
   const status = el('p', { class: 'chat-notice', role: 'status', 'aria-live': 'polite' });
@@ -46,13 +51,19 @@ export function agentPage(user, current) {
   const clear = el('button', { type: 'button', class: 'button secondary', onclick: () => { confirmation.hidden = false; confirmClear.focus(); } }, '清空历史');
 
   function controls() {
-    send.disabled = busy; stop.disabled = !busy || !activeAssistant;
-    create.disabled = busy; clear.disabled = busy || !state.id; input.disabled = busy;
+    send.disabled = busy || Boolean(state.pending); stop.disabled = !busy || !activeAssistant;
+    create.disabled = busy || checking; clear.disabled = busy || checking || !state.id; input.disabled = busy;
     confirmClear.disabled = busy; cancelClear.disabled = busy;
     counter.textContent = `${input.value.length} / 2000`;
   }
   function remember(id) { state.id = id; sessionStorage.setItem(storageKey(user.id), id); }
   function forget() { state.id = null; sessionStorage.removeItem(storageKey(user.id)); }
+  function pending(turn) {
+    state.pending = turn;
+    if (turn) sessionStorage.setItem(pendingKey(user.id), JSON.stringify({ clientTurnId: turn.clientTurnId }));
+    else sessionStorage.removeItem(pendingKey(user.id));
+  }
+  function historyPath() { return `/api/agent/conversations/${encodeURIComponent(state.id)}/messages`; }
   function sources(row) {
     const items = [
       ...row.knowledgeSources.map(source => el('article', { class: 'chat-source' },
@@ -69,7 +80,7 @@ export function agentPage(user, current) {
     ref.state.textContent = row.role === 'user' ? '' : row.status;
     ref.state.className = `chat-state${['未完成', '已停止'].includes(row.status) ? ' chat-state-error' : ''}`;
     ref.sources.replaceChildren();
-    if (row.status === '完成') { const details = sources(row); if (details) ref.sources.append(details); }
+    if (row.role === 'assistant' && row.status === '完成') { const details = sources(row); if (details) ref.sources.append(details); }
     if (follow) messages.scrollTop = messages.scrollHeight;
   }
   function paint() {
@@ -87,20 +98,69 @@ export function agentPage(user, current) {
     messages.scrollTop = messages.scrollHeight;
   }
 
+  async function recoverAnswer() {
+    if (!valid() || busy || checking || !state.pending) return;
+    const turn = state.pending;
+    checking = true; controls();
+    status.textContent = '正在确认本轮回答是否已保存…';
+    try {
+      // 停止或断线后只读历史，等待已在服务端执行的请求提交或释放生成资格。
+      for (const delay of [0, 500, 1500, 3000, 5000, 8000, 8000, 8000, 8000, 8000]) {
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+        if (!valid()) return;
+        try {
+          const history = await api(historyPath());
+          if (!valid()) return;
+          const saved = history.turns.find(item => item.clientTurnId === turn.clientTurnId);
+          if (saved) {
+            const row = { role: 'assistant', text: saved.answer, status: '完成', sources: saved.sources, knowledgeSources: saved.knowledgeSources };
+            if (turn.row) Object.assign(turn.row, row);
+            else state.messages.push({ role: 'user', text: saved.question, status: '完成' }, row);
+            pending(null); paint(); status.textContent = '已恢复本轮保存的回答。';
+            return;
+          }
+          if (delay && !history.generating) {
+            pending(null); status.textContent = '本轮回答未保存，可以继续提问。';
+            return;
+          }
+        } catch (error) {
+          if (!valid()) return;
+          if (error instanceof ApiError && error.status === 404) {
+            pending(null); forget(); status.textContent = failureMessage(error, false);
+            return;
+          }
+          if (!resultUnavailable(error)) { status.textContent = failureMessage(error, false); return; }
+          if (!navigator.onLine) break;
+        }
+      }
+      status.textContent = '暂时无法确认本轮回答，连接恢复或返回页面时会继续查询。';
+    } finally {
+      checking = false;
+      if (valid()) controls();
+    }
+  }
+
   async function changeConversation(clearing) {
-    if (busy || !valid()) return;
+    if (busy || checking || !valid()) return;
     confirmation.hidden = true;
     busy = true; controller = new AbortController(); controls();
     status.textContent = clearing ? '正在清空历史…' : '正在创建会话…';
     try {
-      if (clearing) await write(`/api/agent/conversations/${encodeURIComponent(state.id)}/messages`, 'DELETE', undefined, false, controller.signal);
+      if (clearing) {
+        try { await write(historyPath(), 'DELETE', undefined, false, controller.signal); }
+        catch (error) {
+          if (!valid() || !resultUnavailable(error)) throw error;
+          const history = await api(historyPath(), { signal: controller.signal });
+          if (history.generating || history.turns.length) throw error;
+        }
+      }
       else {
         const created = await write('/api/agent/conversations', 'POST', undefined, false, controller.signal);
         if (!valid()) return;
         remember(created.conversationId);
       }
       if (!valid()) return;
-      state.messages = []; paint(); status.textContent = clearing ? '历史已清空，可以开始新的问题。' : '新会话已就绪。';
+      pending(null); state.messages = []; paint(); status.textContent = clearing ? '历史已清空，可以开始新的问题。' : '新会话已就绪。';
     } catch (error) {
       if (!valid()) return;
       if (error.name === 'AbortError') status.textContent = '操作已停止，结果尚未确认。';
@@ -110,7 +170,7 @@ export function agentPage(user, current) {
 
   async function submit(event) {
     event.preventDefault();
-    if (busy || !valid() || !input.reportValidity()) return;
+    if (busy || state.pending || !valid() || !input.reportValidity()) return;
     const question = input.value.trim();
     if (!question || question.length > 2000) { status.textContent = '请输入1到2000字符的问题。'; return; }
     busy = true; controller = new AbortController();
@@ -127,14 +187,16 @@ export function agentPage(user, current) {
         if (!valid()) return;
         remember(created.conversationId); creating = false;
       }
-      await streamWrite(`/api/agent/conversations/${encodeURIComponent(state.id)}/messages/stream`, { message: question }, (name, payload) => {
+      const clientTurnId = crypto.randomUUID();
+      pending({ clientTurnId, row });
+      await streamWrite(`${historyPath()}/stream`, { message: question, clientTurnId }, (name, payload) => {
         if (!valid()) return;
         if (name === 'start') { row.status = '生成中'; status.textContent = '助手正在查询并生成回答…'; }
         if (name === 'delta') { row.status = '生成中'; row.text += payload.text; }
         if (name === 'reset') { row.text = ''; row.status = '生成中'; }
         if (name === 'done') {
           row.text = payload.answer; row.status = '完成'; row.sources = payload.sources; row.knowledgeSources = payload.knowledgeSources;
-          status.textContent = '回答已完成。';
+          pending(null); status.textContent = '回答已完成。';
         }
         update(row);
       }, controller.signal);
@@ -143,9 +205,10 @@ export function agentPage(user, current) {
       row.status = error.name === 'AbortError' ? '已停止' : '未完成';
       row.sources = []; row.knowledgeSources = []; update(row);
       if (error.status === 404 && !creating) forget();
-      status.textContent = error.name === 'AbortError' ? '已停止生成，回答是否已保存尚未确认；请勿自动重复发送。' : failureMessage(error, creating);
+      if (error.name !== 'AbortError' && !resultUnavailable(error) && !(error instanceof StreamEventError && error.status >= 500)) pending(null);
+      status.textContent = error.name === 'AbortError' ? '已停止生成。' : failureMessage(error, creating);
     } finally {
-      if (valid()) { busy = false; controller = null; activeAssistant = null; controls(); input.focus(); }
+      if (valid()) { busy = false; controller = null; activeAssistant = null; controls(); input.focus(); await recoverAnswer(); }
     }
   }
 
@@ -162,8 +225,13 @@ export function agentPage(user, current) {
     heading('交易助手', '查询本人订单，了解交易规则。', create, clear), confirmation, status, messages, form);
   status.textContent = state.id && !state.messages.length ? '已接续上次会话，之前的消息不在当前页面显示；可清空历史后重新开始。' : '发送问题后会自动建立会话。';
   paint(); controls();
+  window.addEventListener('online', recoverAnswer);
+  window.addEventListener('focus', recoverAnswer);
+  void recoverAnswer();
   dispose = () => {
     alive = false;
+    window.removeEventListener('online', recoverAnswer);
+    window.removeEventListener('focus', recoverAnswer);
     if (activeAssistant && activeAssistant.status !== '完成') activeAssistant.status = '已停止';
     controller?.abort();
   };

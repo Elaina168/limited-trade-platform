@@ -25,6 +25,14 @@ export async function login(page, base, username, password) {
   assert.equal(response.status(), 204)
 }
 
+async function dropCommittedResponse(page, url) {
+  await page.route(url, async route => {
+    const result = await route.fetch()
+    if (result.ok()) await route.abort()
+    else await route.fulfill({ response: result })
+  }, { times: 1 })
+}
+
 export async function verifyTrade(browser, base, backend, fixture, mysql) {
   const buyer = await browser.newPage({ viewport: { width: 390, height: 844 } })
   const admin = await browser.newPage()
@@ -99,16 +107,10 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
       submitted.reject(error)
     }
   }, { times: 1 })
-  const [firstOrder] = await Promise.all([
+  const [firstOrder, retried] = await Promise.all([
     submitted.promise,
+    buyer.waitForResponse(r => r.url() === checkoutUrl && r.request().method() === 'POST' && r.status() === 200),
     button(buyer, '提交购物车订单').click(),
-    buyer.getByRole('alert').filter({ hasText: '无法连接服务' }).waitFor(),
-  ])
-  await buyer.getByRole('region', name('待确认购买')).waitFor()
-  await buyer.reload()
-  const [retried] = await Promise.all([
-    buyer.waitForResponse((r) => r.url() === checkoutUrl && r.request().method() === 'POST'),
-    button(buyer, '使用原参数确认结果').click(),
   ])
   assert.equal(retried.status(), 200)
   assert.deepEqual(retried.request().postDataJSON(), firstOrder.request)
@@ -118,13 +120,14 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
   assert.equal(address.detailAddress, '验收地址')
   assert.equal(await mysql('SELECT COUNT(*) FROM trade_order'), '1')
   assert.equal(await mysql('SELECT stock FROM product WHERE id=' + productId), '8')
-  console.log('通过：购物车结算、刷新后确认原订单和库存对账')
+  console.log('通过：购物车结算回执丢失后自动确认原订单和库存对账')
 
   const orderPath = '/api/orders/' + id
   await heading(buyer, '订单 #' + id)
   const noCsrf = await buyer.request.post(base + orderPath + '/pay')
   assert.equal(noCsrf.status(), 403)
   assert.equal((await (await buyer.request.get(base + orderPath)).json()).status, 'PENDING_PAYMENT')
+  await dropCommittedResponse(buyer, base + orderPath + '/pay')
   await button(buyer, '模拟支付').click()
   await buyer.getByText('模拟支付成功。', { exact: true }).waitFor()
   await buyer.goto(base + '/admin/orders')
@@ -144,11 +147,14 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
   await admin.getByLabel('承运方', exact).fill('验收快递')
   await admin.getByLabel('运单号', exact).fill('ACCEPTANCE-001')
   admin.once('dialog', (dialog) => dialog.accept())
+  await dropCommittedResponse(admin, base + '/api/admin/orders/' + id + '/ship')
   await button(admin, '登记发货').click()
+  await admin.getByText('发货已登记。', { exact: true }).waitFor()
   await heading(admin, '已登记物流')
 
   await buyer.goto(base + '/orders/' + id)
   buyer.once('dialog', (dialog) => dialog.accept())
+  await dropCommittedResponse(buyer, base + orderPath + '/receive')
   await button(buyer, '确认收货').click()
   await buyer.getByText('已确认收货。', { exact: true }).waitFor()
   await admin.reload()
@@ -158,5 +164,5 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
   await buyer.goto(base + '/orders/' + id)
   await heading(buyer, '欢迎回来')
   assert.deepEqual(pageErrors, [])
-  console.log('通过：CSRF、订单归属、管理权限、支付发货收货与退出')
+  console.log('通过：CSRF、订单归属、管理权限、支付、发货、收货丢失回执后自动核对及退出')
 }

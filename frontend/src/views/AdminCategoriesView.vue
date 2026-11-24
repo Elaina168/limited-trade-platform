@@ -17,7 +17,8 @@ function save() {
   const value = name.value.trim()
   if (!value || value.length > 50) { error.value = '分类名称须为1至50个字符。'; return }
   const id = editing.value
-  void mutate(() => id === null ? createCategory(value) : renameCategory(id, value), '分类已保存。', resetDraft)
+  void mutate(() => id === null ? createCategory(value) : renameCategory(id, value), '分类已保存。', resetDraft,
+    id === null ? undefined : list => list.some(item => item.id === id && item.name === value))
 }
 </script>
 <template>

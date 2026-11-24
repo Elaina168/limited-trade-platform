@@ -41,7 +41,7 @@
   ],
   "payment-rule": [
     {
-      "answer": "到达截止时间不能支付。依据 {source}",
+      "answer": "到达截止时间不能支付。依据 [[{source}]]",
       "tool": "search_trade_rules",
       "arguments": {
         "query": "订单刚好到了支付截止时刻还能付款吗？"
@@ -51,7 +51,7 @@
   ],
   "cancel-rule": [
     {
-      "answer": "待支付可取消；已支付不能走此入口。依据 {source}",
+      "answer": "待支付可取消；已支付不能走此入口。依据 [[{source}]]",
       "tool": "search_trade_rules",
       "arguments": {
         "query": "已经付款的订单还能按未付款取消吗？"
@@ -61,7 +61,7 @@
   ],
   "timeout-stock": [
     {
-      "answer": "关闭后归还库存，重复处理不会多加。依据 {source}",
+      "answer": "关闭后归还库存，重复处理不会多加。依据 [[{source}]]",
       "tool": "search_trade_rules",
       "arguments": {
         "query": "重复的超时消息会不会把库存多加一遍？"
@@ -118,7 +118,7 @@
   ],
   "v3-repeat-payment": [
     {
-      "answer": "重复模拟支付不会再次扣减库存。依据 {source}",
+      "answer": "重复模拟支付不会再次扣减库存。依据 [[{source}]]",
       "tool": "search_trade_rules",
       "arguments": {
         "query": "模拟支付与重复请求是否再次扣减库存？"
@@ -137,7 +137,7 @@
   ],
   "v3-receipt-repeat": [
     {
-      "answer": "重复确认不会覆盖原收货时间。依据 {source}",
+      "answer": "重复确认不会覆盖原收货时间。依据 [[{source}]]",
       "tool": "search_trade_rules",
       "arguments": {
         "query": "已完成订单重复确认收货是否覆盖原时间？"

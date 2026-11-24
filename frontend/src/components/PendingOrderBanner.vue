@@ -1,33 +1,32 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { watch } from 'vue'
 import { useAuthStore } from '../stores/auth.ts'
-import { useRouter } from 'vue-router'
 import { useCheckoutStore } from '../stores/checkout.ts'
-import { errorMessage, SessionChangedError } from '../api/http.ts'
+
 const checkout = useCheckoutStore()
 const auth = useAuthStore()
-const router = useRouter()
-const error = ref('')
-watch(() => auth.user?.id, () => { error.value = '' })
-async function retry() {
-  if (auth.busy) return
-  error.value = ''
-  try {
-    const order = await checkout.retry()
-    await router.push(`/orders/${order.id}`)
-  } catch (cause) {
-    if (!(cause instanceof SessionChangedError)) error.value = errorMessage(cause)
-  }
-}
+watch(() => auth.status, status => {
+  if (status === 'authenticated') void checkout.recoverPending()
+}, { immediate: true })
+let retriedIntent: string | null = null
+watch([() => checkout.pending?.requestId, () => checkout.busy, () => checkout.recoveryError], ([id, busy, failure], _, onCleanup) => {
+  if (!id || busy || !failure || id === retriedIntent) return
+  const timer = window.setTimeout(() => {
+    if (auth.status !== 'authenticated') return
+    retriedIntent = id
+    void checkout.recoverPending()
+  }, 2000)
+  onCleanup(() => window.clearTimeout(timer))
+})
 </script>
+
 <template>
-  <section v-if="checkout.pending || error" class="pending-purchase" aria-label="待确认购买">
-    <template v-if="checkout.pending">
-    <strong>上一笔下单结果尚未确认</strong>
-    <p>请使用原参数确认结果。刷新页面也会保留原购买标识，确认前不要重复购买。</p>
-    <p class="muted">购买标识：{{ checkout.pending.requestId }}</p>
-    </template>
-    <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-    <el-button v-if="checkout.pending" :disabled="auth.busy" :loading="checkout.busy" type="primary" @click="retry">使用原参数确认结果</el-button>
+  <section v-if="checkout.pending || checkout.recoveredOrder || checkout.recoveryError"
+    class="pending-purchase" aria-label="下单结果" role="status">
+    <p v-if="checkout.recoveredOrder">
+      已恢复订单 #{{ checkout.recoveredOrder.id }}。
+      <RouterLink :to="{ name: 'order-detail', params: { id: checkout.recoveredOrder.id } }">查看订单</RouterLink>
+    </p>
+    <p v-else>{{ checkout.recoveryError || '正在处理下单结果…' }}</p>
   </section>
 </template>

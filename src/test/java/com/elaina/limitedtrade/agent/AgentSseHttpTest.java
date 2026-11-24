@@ -37,6 +37,7 @@ class AgentSseHttpTest {
     HttpClient client;
     long userId;
     String conversation;
+    final UUID clientTurnId = UUID.randomUUID();
     String csrf;
     String header;
     final CountDownLatch produced = new CountDownLatch(1);
@@ -69,7 +70,7 @@ class AgentSseHttpTest {
     HttpResponse<java.io.InputStream> connect() throws Exception {
         return client.send(HttpRequest.newBuilder(uri("/api/agent/conversations/" + conversation + "/messages/stream"))
                 .timeout(Duration.ofSeconds(10)).header(header, csrf).header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString("{\"message\":\"问题\"}")).build(), HttpResponse.BodyHandlers.ofInputStream());
+                .POST(HttpRequest.BodyPublishers.ofString("{\"message\":\"问题\",\"clientTurnId\":\"" + clientTurnId + "\"}")).build(), HttpResponse.BodyHandlers.ofInputStream());
     }
 
     @AfterEach void cleanup() {
@@ -102,6 +103,12 @@ class AgentSseHttpTest {
             release.countDown();
             String rest = executor.submit(() -> reader.lines().reduce("", (a,b) -> a + b + "\n")).get(5, TimeUnit.SECONDS);
             assertThat(rest).contains("event:done", "最后段");
+            var saved = client.send(HttpRequest.newBuilder(uri("/api/agent/conversations/" + conversation + "/messages"))
+                    .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(saved.statusCode()).isEqualTo(200);
+            var visible = json.readTree(saved.body()).required("turns").required(0);
+            assertThat(visible.required("clientTurnId").asText()).isEqualTo(clientTurnId.toString());
+            assertThat(visible.required("answer").asText()).endsWith("最后段");
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_conversation_turn WHERE conversation_id=?", Integer.class, conversation)).isEqualTo(1);
         }
     }

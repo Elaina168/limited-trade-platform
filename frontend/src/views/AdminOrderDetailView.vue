@@ -20,7 +20,8 @@ function save() {
   if (!payload.carrier || payload.carrier.length > 50 || !payload.trackingNo || payload.trackingNo.length > 64) { error.value = '请填写承运方（最多50字）和运单号（最多64字）。'; return }
   if (!window.confirm(`确认登记发货？承运方：${payload.carrier}，运单号：${payload.trackingNo}`)) return
   const id = data.value.id
-  void mutate(() => shipOrder(id, payload), '发货已登记。', resetDraft)
+  void mutate(() => shipOrder(id, payload), '发货已登记。', resetDraft, order =>
+    order.id === id && order.shipment?.carrier === payload.carrier && order.shipment.trackingNo === payload.trackingNo)
 }
 watch(() => route.params.id, () => { reset(); void load() }, { flush: 'sync' })
 </script>

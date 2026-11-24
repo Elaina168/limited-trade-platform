@@ -40,7 +40,8 @@ class AgentSseApiTest {
     }
 
     @Test void asyncDispatchReturnsSseWithTrustedUserAndNoBuffering() throws Exception {
-        when(streams.open(7301, id, "问题")).thenAnswer(call -> {
+        var clientTurnId = UUID.randomUUID();
+        when(streams.open(7301, id, "问题", clientTurnId)).thenAnswer(call -> {
             var emitter = new SseEmitter();
             emitter.send(SseEmitter.event().name("delta").data("{\"text\":\"回答\"}"));
             emitter.send(SseEmitter.event().name("done").data("{}"));
@@ -48,11 +49,11 @@ class AgentSseApiTest {
             return emitter;
         });
         var result = mvc.perform(post(path).with(csrf()).with(user(new PlatformUserDetails(new AppUser(7301L,"buyer","unused","USER"))))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"message\":\"问题\",\"userId\":7302}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"message\":\"问题\",\"userId\":7302,\"clientTurnId\":\"" + clientTurnId + "\"}"))
                 .andExpect(request().asyncStarted()).andExpect(header().string("X-Accel-Buffering", "no")).andReturn();
         mvc.perform(asyncDispatch(result)).andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:done")));
-        verify(streams).open(7301, id, "问题");
+        verify(streams).open(7301, id, "问题", clientTurnId);
     }
 }

@@ -5,6 +5,11 @@ export class ApiError extends Error {
 }
 export class UserError extends Error {}
 class ConnectionError extends Error {}
+class ResultUnavailableError extends UserError {}
+export function resultUnavailable(error) {
+  return error instanceof ConnectionError || error instanceof ResultUnavailableError
+    || error instanceof ApiError && error.status >= 500;
+}
 let expired = () => {};
 let sessionGeneration = 0;
 export function advanceSession() { sessionGeneration++; }
@@ -31,7 +36,7 @@ export async function api(path, options = {}) {
   if (response.status === 204) return null;
   try { return await response.json(); }
   catch (error) {
-    if (error instanceof SyntaxError) throw new UserError('服务器返回的数据无法读取，请稍后刷新。');
+    if (error instanceof SyntaxError || error instanceof TypeError) throw new ResultUnavailableError('服务器返回的数据无法读取。');
     throw error;
   }
 }
@@ -61,11 +66,11 @@ export async function streamWrite(path, data, onEvent, signal) {
   const response = await request(path, { method: 'POST', signal,
     headers: { [csrf.headerName]: csrf.token, 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify(data) });
   check();
-  if (!response.headers.get('Content-Type')?.includes('text/event-stream') || !response.body) throw new UserError('助手当前无法提供流式回答。');
+  if (!response.headers.get('Content-Type')?.includes('text/event-stream') || !response.body) throw new ResultUnavailableError('助手当前无法提供流式回答。');
   try { return await readAgentStream(response.body, (name, payload) => { check(); onEvent(name, payload); }, signal); }
   catch (error) {
-    if (error instanceof StreamProtocolError) throw new UserError(error.message);
-    if (error instanceof TypeError) throw new UserError('连接中断，回答是否完成尚未确认；请勿自动重复发送。');
+    if (error instanceof StreamProtocolError) throw new ResultUnavailableError(error.message);
+    if (error instanceof TypeError) throw new ResultUnavailableError('连接中断，回答是否完成尚未确认。');
     throw error;
   }
 }
@@ -76,8 +81,8 @@ export function errorMessage(error) {
   const messages = {
     400: '填写内容不符合要求，请检查格式、数值或时间范围。',
     401: '尚未登录、登录已过期，或用户名和密码不正确。',
-    403: '没有操作权限，或页面凭据已失效；请刷新后重试。',
-    404: '目标记录不存在或不属于当前账号，请刷新列表。',
+    403: '服务器拒绝了请求：没有操作权限，或页面凭据已失效。',
+    404: '目标记录不存在或不属于当前账号。',
     409: '当前状态不允许操作：请检查库存、活动名额、券的期限和门槛，或订单状态。',
     429: `操作较频繁，请${error.retryAfter ? `等待 ${error.retryAfter} 秒后` : '稍后'}重试。`,
     503: '服务暂不可用，请稍后重试。'
@@ -91,27 +96,45 @@ export function pendingOrder(userId) {
   const saved = sessionStorage.getItem(intentKey(userId));
   return saved ? JSON.parse(saved) : null;
 }
-export function clearPendingOrder(userId) { sessionStorage.removeItem(intentKey(userId)); }
-export async function placeOrder(userId, path, data) {
-  let intent = pendingOrder(userId);
-  const resuming = Boolean(intent);
-  if (intent && (intent.path !== path || JSON.stringify(intent.data) !== JSON.stringify(data))) {
-    throw new UserError('上一笔下单结果尚未确认，请先在订单页查询或使用原参数重试，避免重复购买。');
-  }
-  if (!intent) {
-    const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
-    intent = { path, data, requestId };
-    sessionStorage.setItem(intentKey(userId), JSON.stringify(intent));
-  }
+const orderRequests = new Set();
+
+async function submitOrder(userId, intent, resuming) {
+  const generation = sessionGeneration;
+  orderRequests.add(userId);
   try {
-    const order = await write(intent.path, 'POST', { ...intent.data, requestId: intent.requestId });
-    clearPendingOrder(userId);
-    return order;
-  } catch (error) {
-    // 已有未知结果遇到认证/CSRF/限流拒绝时，尚未进入幂等查询，必须保留原标识。
-    // 当前订单入口的业务404/409发生在用户锁内幂等查询后，可以修正重新购买。
-    if (error instanceof ApiError && error.status >= 400 && error.status < 500
-        && (!resuming || error.path === intent.path && [404, 409].includes(error.status))) clearPendingOrder(userId);
-    throw error;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const order = await write(intent.path, 'POST', { ...intent.data, requestId: intent.requestId });
+        sessionStorage.removeItem(intentKey(userId));
+        return order;
+      } catch (error) {
+        // 自动核对只复用原来的请求标识和购买参数。
+        if (!attempt && !resuming && resultUnavailable(error) && navigator.onLine && generation === sessionGeneration) {
+          resuming = true;
+          continue;
+        }
+        // 恢复请求只有在业务入口完成幂等判断后的404/409才能解除待确认状态。
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500
+            && (!resuming || error.path === intent.path && [404, 409].includes(error.status))) {
+          sessionStorage.removeItem(intentKey(userId));
+        }
+        throw error;
+      }
+    }
+  } finally {
+    orderRequests.delete(userId);
   }
+}
+
+export function resumeOrder(userId) {
+  const intent = pendingOrder(userId);
+  return intent && !orderRequests.has(userId) ? submitOrder(userId, intent, true) : null;
+}
+
+export function placeOrder(userId, path, data) {
+  if (pendingOrder(userId)) throw new UserError('上一笔下单还在确认，确认后可继续下单。');
+  const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+  const intent = { path, data, requestId };
+  sessionStorage.setItem(intentKey(userId), JSON.stringify(intent));
+  return submitOrder(userId, intent, false);
 }

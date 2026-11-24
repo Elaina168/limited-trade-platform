@@ -4,7 +4,7 @@
 
 通过 Nginx 直接托管 Vue 构建产物和代理同源 API，见[补强 2 静态入口](../docs/learning/47-strengthening-vue-static.md)。下文保留开发和预览步骤。
 
-从仓库根目录执行下面的PowerShell命令。此说明面向已准备好本机依赖的开发/演示环境；不是Docker或生产环境部署验收。
+从仓库根目录执行下文的 PowerShell 命令。准备好服务后，按[人工验收清单](../docs/manual-acceptance.md)验证。
 
 ## 1. 已有环境与配置
 
@@ -13,9 +13,6 @@
 ```powershell
 chcp 65001 > $null
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-Set-Location D:\codex\Java\limited-trade-platform
-$env:JAVA_HOME = 'C:\Program Files\Java\jdk-21.0.10'
-$env:Path = $env:JAVA_HOME + '\bin;C:\nvm4w\nodejs;' + $env:Path
 node.exe --version
 npm.cmd --version
 java.exe -version
@@ -23,7 +20,7 @@ java.exe -version
 
 config/db.properties、rabbitmq.properties、agent.properties存本机配置，均被Git忽略。不要把密钥写进前端、命令行参数或提交内容。新检出项目按同目录example创建配置；已有配置不要覆盖。
 
-开发库limited_trade_platform已于2026-11-22执行014，两张Agent会话表已核对。新环境按根README初始化顺序执行schema和002—014；已迁移的库不要再次执行CREATE TABLE脚本。普通注册账号为USER；管理员角色需要由已有管理账号/数据库管理流程配置，页面不能自助提升权限。
+新库按[数据库初始化](../README.md#数据库初始化首次准备)执行建表及 002–016，并在开发库导入种子和扩展商城数据。已有开发库只执行尚缺的迁移。普通注册账号为 USER，管理员使用现有 ADMIN 账号。
 
 ## 2. 启动已有中间件
 
@@ -57,15 +54,16 @@ $env:RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS = '+S 2:2'
 ## 3. 构建与启动Java
 
 ```powershell
-& .\tools\apache-maven-3.9.16\bin\mvn.cmd --batch-mode --no-transfer-progress -DskipTests package
-& "$env:JAVA_HOME\bin\java.exe" -jar target/limited-trade-platform-0.0.1-SNAPSHOT.jar `
+mvn --batch-mode --no-transfer-progress -DskipTests package
+if ($LASTEXITCODE -ne 0) { throw "Java 构建失败" }
+java.exe -jar target/limited-trade-platform-0.0.1-SNAPSHOT.jar `
   --server.address=127.0.0.1 `
   --server.port=8080 `
   --app.agent.enabled=true `
   --app.agent.rag.enabled=true
 ```
 
--DskipTests只构建，不代表Java测试通过。此命令使用开发库及默认交易缓存、限流、Outbox与消费/扫描配置。Agent启用参数只影响本次进程，本机文件enabled=false仍保留；不传两个启用参数时，以本机配置文件的值为准。
+-DskipTests只构建，不代表Java测试通过。此命令使用开发库及默认交易缓存、限流、Outbox与消费/扫描配置。Agent 启用参数只影响此次 Java 进程。测试基础商城时可省略这两个参数，实际启用状态以本机配置为准。使用仓库内 Maven 时，替换为 .\tools\apache-maven-3.9.16\bin\mvn.cmd。
 
 RAG启动前需准备config/agent.properties所指向的本地模型和索引。本机已有BGE模型；新环境按docs/learning/34-rule-rag.md和scripts/prepare-rag-model.py准备。模型、索引、密钥均不随前端构建发布。资料或模型变更时按RAG说明重建索引；不盲目复用其他模型的旧索引。
 
@@ -96,20 +94,20 @@ $env:BACKEND_URL = 'http://127.0.0.1:8080'
 npm.cmd run preview -- --port 4173 --strictPort
 ```
 
-访问http://127.0.0.1:4173，直接打开/products、/orders、/admin/orders和/agent也应进入SPA并执行身份保护。preview用于本机检查dist，不作为生产服务部署方案。正式静态托管需要SPA回退、同源/api代理与SSE禁用缓冲；现有deploy/nginx配置代理的是Java原生页面，并未切换为Vue静态站点。
+访问http://127.0.0.1:4173，直接打开/products、/orders、/admin/orders和/agent也应进入SPA并执行身份保护。preview用于本机检查dist，不作为生产服务部署方案。现有 Vue 静态托管在 deploy/nginx-vue，入口是 18083。原生页面继续由 Java 提供。
 
-本轮实际验证：构建预览4173→Java18739→测试库，开发页面5173→Java18740→开发库。两端均连接真实Redis/RabbitMQ；临时测试实例使用独立缓存键和MQ前缀，批量订单验收实例关闭用户限流，开发库实例保留限流。没有将测试端口写入产品源码。
+前端七阶段历史验证：构建预览4173→Java18739→测试库，开发页面5173→Java18740→开发库。两端均连接真实Redis/RabbitMQ；临时测试实例使用独立缓存键和MQ前缀，批量订单验收实例关闭用户限流，开发库实例保留限流。没有将测试端口写入产品源码。
 
 ## 6. 推荐演示顺序
 
 1. 游客浏览商品，分类/名称筛选，再注册并登录。
 2. 买家维护地址、购物车；参加活动领券，下单后查看实际成交价及地址快照。
 3. 买家模拟支付；管理员在管理订单中登记物流；买家确认收货。
-4. 另下一笔订单演示取消。网络未知结果先刷新/使用原购买意图确认，不能改参数重复购买。
+4. 另下一笔订单演示取消。响应异常时页面会自动确认购买结果或重新读取订单状态。
 5. 交易助手询问本人订单及支付期限，展开真实规则来源，再追问、清空历史或新建会话。
 6. 退出后访问订单或管理页，展示身份/角色保护。
 
-模拟支付不接入真实资金，物流为人工登记，助手只读。Agent刷新只恢复会话编号，不重新加载旧正文；历史读取和会话列表尚未实现。回答以纯文本显示，Markdown符号不会渲染。
+模拟支付不接入真实资金，物流为人工登记，助手只读。交易助手打开时加载已保存历史，中断后会按本轮编号自动读取结果。回答及规则原文以纯文本展示。
 
 ## 7. 常见运行反馈
 
@@ -119,8 +117,8 @@ npm.cmd run preview -- --port 4173 --strictPort
 | 商品或下单报Redis连接错误 | 保持WSL会话，核对redis-cli ping与6379；不要清空Redis |
 | MQ连接失败/Outbox待发送 | 核对5672、账号、vhost及Java日志；不要删除业务队列或手工改订单状态 |
 | Agent创建接口404 | 核对Java本次进程是否启用app.agent.enabled |
-| 会话接口报缺表 | 确认Java连接的库及014执行状态，不能只检查另一个库 |
-| Agent超时/上游错误 | 核对DeepSeek配置和网络；页面结果未确认时不要自动重发 |
+| 会话接口报缺表 | 确认Java连接的库及 014–016 执行状态，不能只检查另一个库 |
+| Agent超时/上游错误 | 核对 DeepSeek 配置和网络。前端会自动读取该轮已保存结果 |
 | 浏览器控制台401 | 匿名/退出后/api/auth/me的401是身份判定，需结合具体路径区分真正异常 |
 | 新账号不能进入管理中心 | 注册默认USER，前后端均限制ADMIN，不是登录失效 |
 

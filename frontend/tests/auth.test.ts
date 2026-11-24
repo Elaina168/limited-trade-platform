@@ -42,6 +42,20 @@ test('concurrent restores share one request and initial 401 means anonymous', as
   assert.equal(auth.error, '')
 })
 
+test('a lost login response is confirmed automatically from the requested account', async () => {
+  const paths: string[] = []
+  globalThis.fetch = async input => {
+    const path = String(input); paths.push(path)
+    if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'a' })
+    if (path.endsWith('/login')) throw new TypeError('connection lost')
+    return json(user)
+  }
+  const auth = useAuthStore()
+  await auth.login({ username: user.username, password: 'password' })
+  assert.equal(auth.status, 'authenticated')
+  assert.deepEqual(paths, ['/api/auth/csrf', '/api/auth/login', '/api/auth/me'])
+})
+
 test('wrong password stops before me and leaves no authenticated identity', async () => {
   const requests: string[] = []
   globalThis.fetch = async input => {

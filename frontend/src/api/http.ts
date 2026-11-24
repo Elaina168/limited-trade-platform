@@ -17,6 +17,12 @@ export class SessionChangedError extends RequestError {
   constructor() { super('账号状态已变化，请重新操作。') }
 }
 
+export function isUncertainWrite(cause: unknown) {
+  return cause instanceof RequestError && !(cause instanceof SessionChangedError)
+    || cause instanceof HttpError && cause.status >= 500
+    || cause instanceof DOMException && cause.name === 'TimeoutError'
+}
+
 let revision = 0
 let unauthorized: () => void = () => {}
 
@@ -50,7 +56,7 @@ async function request(path: string, options: RequestInit, expected: number): Pr
   } catch (error) {
     if (error instanceof TypeError) throw new RequestError('无法连接服务，请检查网络后重试。')
     if (error instanceof DOMException && error.name === 'TimeoutError') {
-      throw new RequestError('请求超时，操作结果尚未确认，请刷新相关数据后再决定是否重试。')
+      throw new RequestError('请求超时。')
     }
     throw error
   }
@@ -97,7 +103,7 @@ export async function writeJson<T = void>(path: string, method: 'POST' | 'PUT' |
   let body: T
   try { body = await response.json() as T }
   catch (error) {
-    if (error instanceof SyntaxError) throw new RequestError('服务返回的数据无法读取，请重新读取操作结果。')
+    if (error instanceof SyntaxError) throw new RequestError('服务返回的数据无法读取。')
     throw error
   }
   checkSession(expected)
@@ -123,9 +129,9 @@ export function errorMessage(error: unknown): string {
   const messages: Record<number, string> = {
     400: '填写内容不符合要求，请检查后重试。',
     401: '登录未通过或会话已过期，请确认账号密码后重新登录。',
-    403: '当前操作未获允许，页面凭据可能已过期，请刷新后重试。',
+    403: '当前操作未获允许，页面凭据可能已过期。',
     404: '请求的内容不存在，请返回首页。',
-    409: '当前状态不允许操作，请刷新后检查库存、活动名额或优惠券条件。',
+    409: '当前库存、活动名额、优惠券条件或其他业务状态不允许此操作。',
     429: '操作较频繁，请稍后重试。',
     502: '后端服务暂时无法连接，请稍后重试。',
     503: '服务暂时不可用，请稍后重试。',

@@ -75,10 +75,10 @@ public class AgentConversationController {
     }
 
     @PostMapping(value = "/{conversationId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "本人会话流式问答", description = "Session和CSRF；start/delta/reset/done/error事件，只有done代表完整回答已保存。")
+    @Operation(summary = "本人会话流式问答", description = "Session和CSRF；start/delta/reset/done/error事件，收到done表示回答已保存；也可用clientTurnId从展示历史核对。")
     public ResponseEntity<SseEmitter> stream(@AuthenticationPrincipal PlatformUserDetails user,
                                               @PathVariable UUID conversationId, @Valid @RequestBody ChatRequest request) {
-        var emitter = streams.open(user.getId(), conversationId.toString(), request.message());
+        var emitter = streams.open(user.getId(), conversationId.toString(), request.message(), request.clientTurnId());
         return ResponseEntity.ok().header("X-Accel-Buffering", "no").header("Cache-Control", "no-cache")
                 .contentType(MediaType.TEXT_EVENT_STREAM).body(emitter);
     }

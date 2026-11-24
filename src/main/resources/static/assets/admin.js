@@ -22,21 +22,31 @@ export async function adminPage(user, context) {
       if (!product) definitions.push(['stock', '初始库存', numberField(0, { min: 0 })]);
       formDialog(product ? `编辑商品 #${product.id}` : '创建商品', definitions, '保存商品', async values => {
         const data = { name: values.name, price: values.price, categoryId: values.categoryId ? Number(values.categoryId) : null };
-        if (!product) data.stock = Number(values.stock);
-        await write(`/api/admin/products${product ? `/${product.id}` : ''}`, product ? 'PUT' : 'POST', data);
+        if (product) {
+          await context.confirmWrite(`/api/admin/products/${product.id}`, 'PUT', data, async () =>
+            (await api('/api/admin/products')).find(row => row.id === product.id && row.name.trim() === data.name.trim()
+              && Number(row.price) === Number(data.price) && row.categoryId === data.categoryId), '商品信息已更新。');
+        } else await write('/api/admin/products', 'POST', { ...data, stock: Number(values.stock) });
         await finish(product ? '商品信息已更新。' : '商品已创建，初始为下架状态，可在列表中上架。');
       }, product ? '当前接口只修改名称、价格和分类，库存由交易流程维护。' : '新商品保存后为下架状态，需要单独上架。');
     }
     return el('div', {}, el('div', { class: 'page-heading' }, el('h2', {}, '全部商品'), button('创建商品', () => edit(), '')), items.length ? el('div', { class: 'admin-list' }, items.map(p => el('article', { class: 'card admin-row' },
       el('div', {}, el('strong', {}, `#${p.id} ${p.name}`), el('div', { class: 'muted' }, `${money(p.price)} · 库存 ${p.stock}`), badge(p.status)),
       el('div', { class: 'actions' }, button('编辑商品', () => edit(p)), button(p.status === 'ON_SALE' ? '下架' : '上架', async () => {
-        await write(`/api/admin/products/${p.id}/status`, 'PATCH', { status: p.status === 'ON_SALE' ? 'OFF_SALE' : 'ON_SALE' }); await finish('商品状态已更新。');
+        const status = p.status === 'ON_SALE' ? 'OFF_SALE' : 'ON_SALE';
+        await context.confirmWrite(`/api/admin/products/${p.id}/status`, 'PATCH', { status }, async () =>
+          (await api('/api/admin/products')).find(row => row.id === p.id && row.status === status), '商品状态已更新。');
+        await finish('商品状态已更新。');
       }))))) : empty('还没有商品。'));
   }
   async function categories() {
     const items = await api('/api/categories');
     const edit = category => formDialog(category ? '重命名分类' : '创建分类', [['name', '分类名称', { required: true, maxLength: 50, value: category?.name || '', wide: true }]], '保存分类', async values => {
-      await write(`/api/admin/categories${category ? `/${category.id}` : ''}`, category ? 'PUT' : 'POST', values); await finish('分类已保存。');
+      if (category) {
+        await context.confirmWrite(`/api/admin/categories/${category.id}`, 'PUT', values, async () =>
+          (await api('/api/categories')).find(row => row.id === category.id && row.name.trim() === values.name.trim()), '分类已保存。');
+      } else await write('/api/admin/categories', 'POST', values);
+      await finish('分类已保存。');
     });
     return el('div', {}, el('div', { class: 'page-heading' }, el('h2', {}, '商品分类'), button('创建分类', () => edit(null), '')), items.length ? el('div', { class: 'admin-list' }, items.map(c => el('article', { class: 'card admin-row' }, el('strong', {}, `#${c.id} ${c.name}`), button('重命名', () => edit(c))))) : empty('还没有分类。'));
   }

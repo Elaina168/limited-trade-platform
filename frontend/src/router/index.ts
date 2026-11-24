@@ -44,7 +44,7 @@ router.beforeEach(async to => {
   if (to.name === 'unavailable') return true
   const auth = useAuthStore()
   await auth.restore()
-  if (auth.status === 'failed') return { name: 'unavailable' }
+  if (auth.status === 'failed') return { name: 'unavailable', query: { returnTo: to.fullPath } }
   if (to.meta.requiresAuth && !auth.user) return { name: 'login' }
   if (to.meta.requiresAdmin && !auth.isAdmin) return { name: 'forbidden' }
   if ((to.name === 'login' || to.name === 'register') && auth.user) return { name: auth.isAdmin ? 'admin' : 'home' }

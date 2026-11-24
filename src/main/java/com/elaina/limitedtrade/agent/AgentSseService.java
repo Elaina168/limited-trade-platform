@@ -32,10 +32,10 @@ public class AgentSseService implements AutoCloseable {
         this.json = json;
     }
 
-    public SseEmitter open(long userId, String id, String message) {
+    public SseEmitter open(long userId, String id, String message, java.util.UUID clientTurnId) {
         if (!capacity.tryAcquire()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "流式请求已达并发上限");
         AgentConversationService.PreparedTurn prepared;
-        try { prepared = conversations.prepare(userId, id, message); }
+        try { prepared = conversations.prepare(userId, id, message, clientTurnId); }
         catch (RuntimeException error) { capacity.release(); throw error; }
         var emitter = new SseEmitter(properties.requestTimeout().plusSeconds(5).toMillis());
         var stream = new AgentStream(event -> send(emitter, event.type(), Map.of("round", event.round(), "text", event.text())));

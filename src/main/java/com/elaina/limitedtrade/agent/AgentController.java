@@ -32,5 +32,5 @@ public class AgentController {
         return agent.chat(user.getId(), request.message());
     }
 
-    public record ChatRequest(@NotBlank @Size(max = 2000) String message) { }
+    public record ChatRequest(@NotBlank @Size(max = 2000) String message, java.util.UUID clientTurnId) { }
 }

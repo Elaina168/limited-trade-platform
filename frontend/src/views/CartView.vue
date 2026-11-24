@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth.ts'
 import { useCheckoutStore } from '../stores/checkout.ts'
 import { addresses, cartItems, removeCartItem, setCartQuantity } from '../api/checkout.ts'
 import { errorMessage, SessionChangedError } from '../api/http.ts'
+import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
 import type { Address, CartItem } from '../types/checkout.ts'
 
 const auth = useAuthStore()
@@ -24,6 +25,17 @@ let operation = 0
 const blocked = computed(() => busy.value || saving.value || auth.busy || checkout.busy || checkout.pending !== null)
 const estimate = computed(() => items.value.filter(item => selected.value.includes(item.productId)).reduce((sum, item) => sum + Math.round(Number(item.price) * 100) * item.quantity, 0) / 100)
 const unsaved = computed(() => items.value.some(item => selected.value.includes(item.productId) && quantities.value[item.productId] !== item.quantity))
+function applyCart(cart: CartItem[]) {
+  // 更新服务端数据，但保留用户尚未保存的数量输入。
+  const previous = items.value
+  quantities.value = Object.fromEntries(cart.map(item => {
+    const old = previous.find(value => value.productId === item.productId)
+    const draft = quantities.value[item.productId]
+    return [item.productId, old && draft !== old.quantity ? draft : item.quantity]
+  }))
+  items.value = cart
+  selected.value = selected.value.filter(id => cart.some(item => item.productId === id && item.status === 'ON_SALE' && item.stock >= item.quantity))
+}
 async function load() {
   const current = ++sequence
   busy.value = true
@@ -31,15 +43,7 @@ async function load() {
   try {
     const [cart, data] = await Promise.all([cartItems(), addresses()])
     if (current !== sequence) return
-    // 身份焦点刷新更新服务端数据，但保留用户尚未保存的数量输入。
-    const previous = items.value
-    quantities.value = Object.fromEntries(cart.map(item => {
-      const old = previous.find(value => value.productId === item.productId)
-      const draft = quantities.value[item.productId]
-      return [item.productId, old && draft !== old.quantity ? draft : item.quantity]
-    }))
-    items.value = cart
-    selected.value = selected.value.filter(id => cart.some(item => item.productId === id && item.status === 'ON_SALE' && item.stock >= item.quantity))
+    applyCart(cart)
     addressList.value = data
     if (!data.some(item => String(item.id) === addressId.value)) addressId.value = String(data.find(item => item.defaultAddress)?.id ?? data[0]?.id ?? '')
   } catch (cause) { if (current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
@@ -50,14 +54,27 @@ async function update(item: CartItem, remove = false) {
   const quantity = quantities.value[item.productId]!
   if (!remove && (!Number.isInteger(quantity) || quantity < 1 || quantity > 2147483647)) { error.value = '数量须为1至2147483647的整数。'; return }
   const current = ++operation
+  const success = remove ? '商品已移除。' : '购物车数量已保存。'
   saving.value = true; error.value = ''; notice.value = ''
   try {
     if (remove) await removeCartItem(item.productId)
     else await setCartQuantity(item.productId, quantity)
     if (current !== operation) return
-    notice.value = remove ? '商品已移除。' : '购物车数量已保存。'
+    notice.value = success
     await load()
-  } catch (cause) { if (current === operation && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
+  } catch (cause) {
+    if (current !== operation || cause instanceof SessionChangedError) return
+    if (!canReconcileWrite(cause)) { error.value = errorMessage(cause); return }
+    notice.value = '正在核对购物车状态…'
+    const result = await reconcileWrite(cartItems, cart => {
+      const actual = cart.find(row => row.productId === item.productId)
+      return remove ? !actual : actual?.quantity === quantity
+    }, () => current === operation)
+    if (current !== operation) return
+    if (result?.snapshot) applyCart(result.snapshot)
+    notice.value = !result ? '' : result.confirmed ? success : result.snapshot
+      ? '已更新购物车，暂未确认本次修改。' : '暂时无法核对购物车状态。'
+  }
   finally { if (current === operation) saving.value = false }
 }
 async function submit() {
@@ -69,7 +86,7 @@ async function submit() {
   try {
     const order = await checkout.submit('/api/orders/checkout', { productIds: [...selected.value].sort((a, b) => a - b), addressId: Number(addressId.value) })
     await router.push(`/orders/${order.id}`)
-  } catch (cause) { if (!(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
+  } catch (cause) { if (!checkout.pending && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
 }
 watch(() => auth.user?.id, () => {
   sequence++; operation++; items.value = []; selected.value = []; quantities.value = {}; addressList.value = []; addressId.value = ''; saving.value = false; notice.value = ''

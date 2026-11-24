@@ -20,6 +20,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -35,8 +36,13 @@ public class RuleKnowledgeBase {
     private final String fingerprint;
 
     public RuleKnowledgeBase(BgeEmbeddingModel model, RagProperties properties, ObjectMapper mapper) throws IOException {
+        this(model, properties, mapper,
+                new PathMatchingResourcePatternResolver().getResources("classpath:knowledge/*.md"));
+    }
+
+    RuleKnowledgeBase(BgeEmbeddingModel model, RagProperties properties, ObjectMapper mapper, Resource[] resources)
+            throws IOException {
         this.properties = properties;
-        var resources = new PathMatchingResourcePatternResolver().getResources("classpath:knowledge/*.md");
         Arrays.sort(resources, Comparator.comparing(resource -> resource.getFilename()));
         if (resources.length == 0) throw new IllegalStateException("未找到公开规则Markdown资料");
         var loaded = new ArrayList<RuleChunk>();

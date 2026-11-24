@@ -24,11 +24,17 @@ function save() {
   }
   const payload = { name, price: Number(form.price), categoryId: form.categoryId ? Number(form.categoryId) : null }
   const id = editing.value
-  void mutate(() => id === null ? createProduct({ ...payload, stock: form.stock }) : updateProduct(id, payload), id === null ? '商品已创建，初始为下架状态。' : '商品资料已更新。', resetDraft)
+  if (id === null) {
+    void mutate(() => createProduct({ ...payload, stock: form.stock }), '商品已创建，初始为下架状态。', resetDraft)
+    return
+  }
+  void mutate(() => updateProduct(id, payload), '商品资料已更新。', resetDraft, ({ products }) =>
+    products.some(item => item.id === id && item.name === payload.name && Number(item.price) === payload.price && item.categoryId === payload.categoryId))
 }
 function toggle(item: AdminProduct) {
   const status = item.status === 'ON_SALE' ? 'OFF_SALE' : 'ON_SALE'
-  void mutate(() => updateProductStatus(item.id, status), status === 'ON_SALE' ? '商品已上架。' : '商品已下架。')
+  void mutate(() => updateProductStatus(item.id, status), status === 'ON_SALE' ? '商品已上架。' : '商品已下架。', undefined,
+    ({ products }) => products.some(product => product.id === item.id && product.status === status))
 }
 </script>
 <template>

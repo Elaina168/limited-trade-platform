@@ -45,7 +45,6 @@ async function submit() {
           </div>
           <p v-if="validation || auth.error" class="form-error" role="alert">{{ validation || auth.error }}</p>
           <el-button class="login-submit" type="primary" native-type="submit" :loading="auth.busy" size="large">登录</el-button>
-          <el-button v-if="auth.status === 'failed'" class="identity-retry" text @click="auth.restore(true)" :disabled="auth.busy">重新读取登录状态</el-button>
         </form>
         <p><RouterLink class="text-link" to="/register">没有账号？立即注册</RouterLink></p>
         <RouterLink class="text-link" to="/products">先逛逛商品 →</RouterLink>

@@ -92,6 +92,28 @@ test('incomplete answer retains draft without sources and is not automatically r
  globalThis.fetch=async(input,options)=>{if(String(input).endsWith('/stream'))posts++;return fetch(input,options)}
  const {agent}=await store();await agent.send('问题');assert.equal(posts,1);assert.equal(agent.messages[1]!.state,'incomplete');assert.equal(agent.messages[1]!.text,'未完成正文');assert.equal(agent.messages[1]!.result,undefined)
 })
+test('lost done restores the exact saved turn without sending another model request',async()=>{
+ let postedTurnId:string|undefined;let posts=0;let historyReads=0
+ mockComplete(event('start',{})+event('delta',{round:1,text:'草稿'}))
+ const fallback=globalThis.fetch
+ globalThis.fetch=async(input,options)=>{
+   const path=String(input)
+   if(path.endsWith('/stream')){posts++;postedTurnId=JSON.parse(String(options?.body)).clientTurnId}
+   if(path.endsWith('/messages')) {
+     const older = {...history.turns[0],clientTurnId:'other-id',answer:'相同问题的旧回答'}
+     return ++historyReads === 1
+       ? json({...history,generating:true,turns:[older]})
+       : json({...history,turns:[older,{...history.turns[0],clientTurnId:postedTurnId}]})
+   }
+   return fallback(input,options)
+ }
+ const {agent}=await store();await agent.send('问题')
+ assert.match(postedTurnId??'',/^[0-9a-f-]{36}$/)
+ assert.equal(agent.messages.at(-1)?.state,'complete')
+ assert.equal(agent.messages.at(-1)?.text,result.answer)
+ assert.equal(posts,1)
+ assert.equal(historyReads,2)
+})
 test('clear only removes local messages after successful DELETE',async()=>{
  mockComplete();const {agent}=await store();await agent.send('问题')
  globalThis.fetch=async input=>String(input).endsWith('/csrf')?json({headerName:'X-CSRF-TOKEN',token:'a'}):new Response(null,{status:403})

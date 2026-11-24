@@ -1,12 +1,66 @@
 import { beforeEach, afterEach, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { advanceSession } from '../src/api/http.ts'
+import { createPinia } from 'pinia'
+import { createSSRApp, effectScope } from 'vue'
+import { renderToString } from 'vue/server-renderer'
+import { advanceSession, RequestError } from '../src/api/http.ts'
+import { useAdminPage } from '../src/composables/useAdminPage.ts'
+import { useAuthStore } from '../src/stores/auth.ts'
 import type { Activity } from '../src/types/catalog.ts'
 import type { CouponInput } from '../src/types/admin.ts'
 const originalFetch = globalThis.fetch
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status })
 beforeEach(() => { advanceSession() })
 afterEach(() => { globalThis.fetch = originalFetch })
+
+test('admin writes with lost responses reread the server without resending writes', async t => {
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.user = { id: 1, username: 'admin', role: 'ADMIN' }
+  auth.status = 'authenticated'
+  let writes = 0
+  let status = 'OFF_SALE'
+  let read = async () => status
+  let page!: ReturnType<typeof useAdminPage<string>>
+  const scope = effectScope(true)
+  t.after(() => scope.stop())
+  const app = createSSRApp({ setup() {
+    page = scope.run(() => useAdminPage(() => read(), () => {}))!
+    return () => null
+  } }).use(pinia)
+  await renderToString(app)
+
+  const lostWrite = async (value: string) => {
+    writes++
+    status = value
+    throw new RequestError('写入响应丢失')
+  }
+  await page.mutate(() => lostWrite('ON_SALE'), '商品已上架。', undefined, value => value === 'ON_SALE')
+  assert.equal(writes, 1)
+  assert.equal(page.data.value, 'ON_SALE')
+  assert.equal(page.notice.value, '商品已上架。')
+  assert.equal(page.error.value, '')
+
+  await page.mutate(() => lostWrite('已存在相同资料'), '商品已创建。')
+  assert.equal(writes, 2)
+  assert.equal(page.data.value, '已存在相同资料')
+  assert.match(page.notice.value, /已自动更新页面数据.*无法确认/)
+  assert.equal(page.blocked.value, false)
+
+  let finishRead!: (value: string) => void
+  const pendingRead = new Promise<string>(resolve => { finishRead = resolve })
+  const readStarted = new Promise<void>(resolve => {
+    read = () => { resolve(); return pendingRead }
+  })
+  const pendingOperation = page.mutate(() => lostWrite('旧会话的最新状态'), '商品已保存。')
+  await readStarted
+  advanceSession()
+  finishRead('旧会话的最新状态')
+  await pendingOperation
+  assert.equal(writes, 3)
+  assert.equal(page.data.value, null)
+  assert.equal(page.notice.value, '')
+})
 
 test('admin product status uses PATCH and current CSRF while detail update excludes stock', async () => {
   const api = await import('../src/api/admin.ts')

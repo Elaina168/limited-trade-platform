@@ -65,7 +65,7 @@ export async function readAgentStream(body: ReadableStream<Uint8Array>, onEvent:
     while (!completed) {
       let chunk: ReadableStreamReadResult<Uint8Array>
       try { chunk = await (signal ? Promise.race([reader.read(), aborted]) : reader.read()) }
-      catch (cause) { if (cause instanceof TypeError) throw new RequestError('连接中断，回答是否保存尚未确认，请勿自动重复发送。'); throw cause }
+      catch (cause) { if (cause instanceof TypeError) throw new RequestError('连接中断。'); throw cause }
       signal?.throwIfAborted()
       try { buffer += chunk.done ? decoder.decode() : decoder.decode(chunk.value, { stream: true }) }
       catch (cause) { if (cause instanceof TypeError) throw new AgentProtocolError('助手返回的文字编码无法读取。'); throw cause }
@@ -79,7 +79,7 @@ export async function readAgentStream(body: ReadableStream<Uint8Array>, onEvent:
         if (completed) return completed
       }
       buffer = buffer.slice(start)
-      if (chunk.done) throw new AgentProtocolError('连接已结束，但尚未确认回答完成；结果可能已保存，请勿自动重复发送。')
+      if (chunk.done) throw new AgentProtocolError('连接已结束，但尚未确认回答完成。')
     }
     return completed
   } finally {

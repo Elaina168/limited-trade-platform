@@ -3,7 +3,8 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth.ts'
 import { activity, activityCoupons, products, myCoupons, claimCoupon } from '../api/catalog.ts'
-import { errorMessage, HttpError, SessionChangedError } from '../api/http.ts'
+import { errorMessage, SessionChangedError } from '../api/http.ts'
+import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
 import type { Activity, ActivityCoupon, Product, UserCoupon } from '../types/catalog.ts'
 
 const route = useRoute()
@@ -57,6 +58,7 @@ async function load() {
 async function claim(coupon: ActivityCoupon) {
   if (claiming.value !== null || auth.busy || !auth.user) return
   const current = sequence
+  const activityId = detail.value!.id
   claiming.value = coupon.id
   notice.value = ''
   try {
@@ -67,10 +69,24 @@ async function claim(coupon: ActivityCoupon) {
     notice.value = `已领取「${result.coupon.name}」。`
   } catch (cause) {
     if (current !== sequence || cause instanceof SessionChangedError) return
-    notice.value = cause instanceof HttpError && cause.status === 409
-      ? '当前不在领取时间内或优惠券已领完，请刷新活动。' : errorMessage(cause)
+    if (!canReconcileWrite(cause)) { notice.value = errorMessage(cause); return }
+    notice.value = '正在核对领券结果…'
+    const result = await reconcileWrite(async () => {
+      const [mine, templates] = await Promise.all([myCoupons(), activityCoupons(activityId)])
+      return { mine, templates }
+    }, data => data.mine.some(item => item.coupon.id === coupon.id), () => current === sequence)
+    if (!result || current !== sequence) {
+      if (current === sequence) notice.value = ''
+      return
+    }
+    if (result.snapshot) {
+      owned.value = result.snapshot.mine
+      coupons.value = result.snapshot.templates
+      notice.value = result.confirmed ? `已领取「${coupon.name}」。` : '已更新优惠券状态，暂未查到本人领取记录。'
+    } else notice.value = '暂时无法核对领券结果。'
   } finally { if (current === sequence) claiming.value = null }
 }
+watch([() => route.params.id, () => auth.user?.id], () => { sequence++; claiming.value = null }, { flush: 'sync' })
 // 身份操作结束后，即使还是同一账号，也要重新确认活动与领券状态。
 watch([() => route.params.id, () => auth.user?.id, () => auth.status], () => {
   if (auth.status === 'authenticated' || auth.status === 'anonymous') void load()

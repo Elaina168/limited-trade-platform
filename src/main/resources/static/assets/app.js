@@ -1,4 +1,4 @@
-import { api, write, ApiError, UserError, errorMessage, onSessionExpired, advanceSession, pendingOrder, placeOrder, clearPendingOrder } from './api.js';
+import { api, write, ApiError, UserError, errorMessage, onSessionExpired, advanceSession, pendingOrder, placeOrder, resumeOrder, resultUnavailable } from './api.js';
 import { el, button, heading, empty, line, money, time, badge, modal, formDialog, field, options, numberField, addressLabel, notify, pager, statusNames } from './ui.js';
 import { adminPage } from './admin.js';
 import { agentPage, disposeAgentPage, resetAgentIdentity } from './agent.js';
@@ -38,6 +38,23 @@ async function readIdentity() {
   catch (error) { if (error instanceof ApiError && error.status === 401) setUser(null); else throw error; }
   state.ready = true; account();
 }
+let identityRequest;
+function recoverIdentity() {
+  if (state.ready) return;
+  if (!identityRequest) identityRequest = (async () => {
+    document.querySelector('#account').textContent = '正在确认登录状态…';
+    for (const delay of [0, 500, 1500]) {
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      if (!navigator.onLine) break;
+      try { await readIdentity(); return; }
+      catch (error) {
+        if (!resultUnavailable(error)) { notify(errorMessage(error), true); break; }
+      }
+    }
+    document.querySelector('#account').textContent = '暂时无法确认登录状态，连接恢复后会继续查询。';
+  })().finally(() => { identityRequest = null; });
+  return identityRequest;
+}
 onSessionExpired(() => {
   setUser(null); document.querySelector('#modal').close(); account();
   version++; main.replaceChildren(empty('登录已过期，请重新登录。'), button('重新登录', () => openAuth(), ''));
@@ -55,23 +72,55 @@ function openAuth(mode = 'login', username = '') {
       catch (error) { if (error instanceof ApiError && error.status === 409) throw new UserError('这个用户名已被使用，请换一个。'); throw error; }
       view.form.reset(); notify('注册成功，请使用新账号登录。'); openAuth('login', values.username);
     } else {
-      await write('/api/auth/login', 'POST', values, true);
-      view.form.reset(); await readIdentity(); await navigate(); notify('登录成功。');
+      try {
+        await write('/api/auth/login', 'POST', values, true);
+        await readIdentity();
+      } catch (error) {
+        if (!resultUnavailable(error)) throw error;
+        state.ready = false;
+        await recoverIdentity();
+        if (!state.ready) throw new UserError('正在等待连接恢复以确认登录结果。');
+        if (state.user?.username.toLowerCase() !== values.username.toLowerCase()) throw error;
+      }
+      view.form.reset(); await navigate(); notify('登录成功。'); void recoverOrder();
     }
   }, register ? '用户名为3—50位字母、数字或下划线；密码至少8个字符，UTF-8编码最多72字节。' : '使用账号密码登录，继续你的购买流程。');
   view.form.prepend(el('div', { class: 'tabs' }, button('登录', () => openAuth('login'), register ? 'quiet' : ''), button('注册', () => openAuth('register'), register ? '' : 'quiet')));
 }
 
 function pendingBanner() {
-  const intent = state.user && pendingOrder(state.user.id);
-  if (!intent) return null;
-  return el('aside', { class: 'pending' }, el('p', {}, '上一笔下单的结果尚未确认。请查询订单，或使用原请求重试，避免重复购买。'),
-    el('div', { class: 'actions' }, button('使用原请求重试', async () => {
-      const current = captureView();
-      const order = await placeOrder(state.user.id, intent.path, intent.data);
-      if (!current()) return;
-      notify(`订单 #${order.id} 已确认。`); await go('orders'); await showOrder(order);
-    }), button('查询我的订单', () => go('orders'))));
+  return state.user && pendingOrder(state.user.id)
+    ? el('aside', { class: 'pending', role: 'status' }, '上一笔下单结果待确认，页面会自动核对。') : null;
+}
+
+async function recoverOrder() {
+  if (!state.user || !navigator.onLine) return;
+  const userId = state.user.id;
+  const current = captureView(true);
+  const recovery = resumeOrder(userId);
+  if (!recovery) return;
+  try {
+    const order = await recovery;
+    if (!current()) return;
+    document.querySelectorAll('aside.pending').forEach(banner => banner.remove());
+    notify(`订单 #${order.id} 已确认，应付 ${money(order.totalAmount)}。`);
+    if (path() === 'orders' && !document.querySelector('#modal').open) await navigate();
+  } catch (error) {
+    if (!current()) return;
+    if (!pendingOrder(userId)) document.querySelectorAll('aside.pending').forEach(banner => banner.remove());
+    notify(errorMessage(error), true);
+  }
+}
+
+async function submitStorefrontOrder(path, data) {
+  const userId = state.user.id;
+  const current = captureView(true);
+  try { return await placeOrder(userId, path, data); }
+  catch (error) {
+    if (!current() || !pendingOrder(userId)) throw error;
+    if (navigator.onLine) setTimeout(() => { if (current()) void recoverOrder(); }, 2500);
+    throw new UserError('下单结果待确认，页面会自动核对。');
+  }
 }
 
 async function productsPage() {
@@ -97,7 +146,9 @@ async function addToCart(product) {
   const cart = await api('/api/cart/items'); const existing = cart.find(item => item.productId === product.id);
   if (!current()) return;
   const quantity = (existing?.quantity || 0) + 1;
-  await write(`/api/cart/items/${product.id}`, 'PUT', { quantity }); notify(`已加入购物车：${product.name}，当前数量 ${quantity}。`);
+  await confirmWrite(`/api/cart/items/${product.id}`, 'PUT', { quantity }, async () =>
+    (await api('/api/cart/items')).find(item => item.productId === product.id && item.quantity === quantity), '购物车数量已更新。');
+  notify(`已加入购物车：${product.name}，当前数量 ${quantity}。`);
 }
 
 async function openBuy(product, activity = null) {
@@ -115,7 +166,7 @@ async function openBuy(product, activity = null) {
   formDialog(activity ? `参加活动 · ${activity.name}` : `购买 · ${product.name}`, definitions, '提交订单', async values => {
     const currentSession = captureView(true);
     const data = { productId: product.id, quantity: Number(values.quantity), activityId: activity?.id || null, userCouponId: values.userCouponId ? Number(values.userCouponId) : null, addressId: Number(values.addressId) };
-    const order = await placeOrder(state.user.id, '/api/orders', data);
+    const order = await submitStorefrontOrder('/api/orders', data);
     if (!currentSession()) return;
     notify(`订单 #${order.id} 创建成功，应付 ${money(order.totalAmount)}。`); await go('orders'); await showOrder(order);
   }, `商品单价 ${money(product.price)}。金额、库存、活动名额和优惠券是否可用，以提交时的服务器结果为准。`);
@@ -141,7 +192,8 @@ async function showActivity(activity) {
       const claim = button('领取优惠券', async () => {
         if (!needUser()) return;
         const current = captureView();
-        const owned = await write(`/api/coupons/${c.id}/claim`);
+        const owned = await confirmWrite(`/api/coupons/${c.id}/claim`, 'POST', undefined, async () =>
+          (await api('/api/coupons/mine')).find(coupon => coupon.coupon.id === c.id), `已取得优惠券 ${c.name}。`);
         if (!current()) return;
         notify(`已领取 ${owned.coupon.name}，可在我的券中查看。`); await showActivity(activity);
       });
@@ -160,8 +212,15 @@ async function cartPage() {
     return el('article', { class: 'card cart-row' }, checked, el('div', {}, el('strong', {}, item.name), el('div', { class: 'muted' }, `库存 ${item.stock} · ${statusNames[item.status]}`)), el('span', { class: 'price' }, money(item.price)), quantity,
       el('div', { class: 'actions' }, button('保存数量', async () => {
         if (!quantity.reportValidity()) return;
-        await write(`/api/cart/items/${item.productId}`, 'PUT', { quantity: Number(quantity.value) }); notify('购物车数量已保存。'); await navigate();
-      }), button('移除', async () => { await write(`/api/cart/items/${item.productId}`, 'DELETE'); await navigate(); notify('商品已移出购物车。'); }, 'danger')));
+        const value = Number(quantity.value);
+        await confirmWrite(`/api/cart/items/${item.productId}`, 'PUT', { quantity: value }, async () =>
+          (await api('/api/cart/items')).find(row => row.productId === item.productId && row.quantity === value), '购物车数量已保存。');
+        notify('购物车数量已保存。'); await navigate();
+      }), button('移除', async () => {
+        await confirmWrite(`/api/cart/items/${item.productId}`, 'DELETE', undefined, async () =>
+          !(await api('/api/cart/items')).some(row => row.productId === item.productId), '商品已移出购物车。');
+        await navigate(); notify('商品已移出购物车。');
+      }, 'danger')));
   });
   const address = field('addressId', '结算收货地址', { choices: addresses.map(a => [a.id, addressLabel(a)]), value: addresses.find(a => a.defaultAddress)?.id || '', required: true });
   const checkout = button('结算选中商品', async () => {
@@ -170,7 +229,7 @@ async function cartPage() {
     if (!productIds.length) throw new UserError('请至少选中一件商品。');
     if (selections.some(([, checked, quantity, saved]) => checked.checked && Number(quantity.value) !== saved)) throw new UserError('选中商品的数量有未保存的修改，请先保存数量。');
     if (!address.input.value) throw new UserError('请选择收货地址；没有地址时请先到收货地址页添加。');
-    const order = await placeOrder(state.user.id, '/api/orders/checkout', { productIds, addressId: Number(address.input.value) });
+    const order = await submitStorefrontOrder('/api/orders/checkout', { productIds, addressId: Number(address.input.value) });
     if (!current()) return;
     notify(`结算成功，订单 #${order.id}。`); await go('orders'); await showOrder(order);
   }, '');
@@ -186,14 +245,27 @@ const addressDefinitions = a => [
 ];
 function editAddress(address = null) {
   formDialog(address ? '编辑收货地址' : '新增收货地址', addressDefinitions(address), '保存地址', async values => {
-    await write(`/api/addresses${address ? `/${address.id}` : ''}`, address ? 'PUT' : 'POST', values); await navigate(); notify('收货地址已保存。');
+    if (address) {
+      await confirmWrite(`/api/addresses/${address.id}`, 'PUT', values, async () =>
+        (await api('/api/addresses')).find(row => row.id === address.id && Object.entries(values).every(([key, value]) => row[key].trim() === value.trim())),
+      '收货地址已保存。');
+    } else await write('/api/addresses', 'POST', values);
+    await navigate(); notify('收货地址已保存。');
   });
 }
 async function addressesPage() {
   const addresses = await api('/api/addresses');
   return el('section', {}, heading('收货地址', '订单保存成交时的地址，修改地址簿不改变历史订单。', button('新增地址', () => editAddress(), '')),
-    addresses.length ? el('div', { class: 'grid' }, addresses.map(a => el('article', { class: 'card' }, a.defaultAddress ? badge('默认地址') : null, el('h2', {}, a.recipientName), el('p', {}, a.phone), el('p', { class: 'muted' }, `${a.province}${a.city}${a.district}${a.detailAddress}`), el('div', { class: 'actions' }, button('编辑', () => editAddress(a)), !a.defaultAddress ? button('设为默认', async () => { await write(`/api/addresses/${a.id}/default`, 'PUT'); await navigate(); }) : null, button('删除', async () => {
-      formDialog('确认删除地址', [], '确认删除', async () => { await write(`/api/addresses/${a.id}`, 'DELETE'); await navigate(); notify('地址已删除，历史订单快照仍保留。'); }, `删除 ${a.recipientName} 的这条地址？`);
+    addresses.length ? el('div', { class: 'grid' }, addresses.map(a => el('article', { class: 'card' }, a.defaultAddress ? badge('默认地址') : null, el('h2', {}, a.recipientName), el('p', {}, a.phone), el('p', { class: 'muted' }, `${a.province}${a.city}${a.district}${a.detailAddress}`), el('div', { class: 'actions' }, button('编辑', () => editAddress(a)), !a.defaultAddress ? button('设为默认', async () => {
+      await confirmWrite(`/api/addresses/${a.id}/default`, 'PUT', undefined, async () =>
+        (await api('/api/addresses')).find(row => row.id === a.id && row.defaultAddress), '默认收货地址已更新。');
+      await navigate();
+    }) : null, button('删除', async () => {
+      formDialog('确认删除地址', [], '确认删除', async () => {
+        await confirmWrite(`/api/addresses/${a.id}`, 'DELETE', undefined, async () =>
+          !(await api('/api/addresses')).some(row => row.id === a.id), '地址已删除，历史订单快照仍保留。');
+        await navigate(); notify('地址已删除，历史订单快照仍保留。');
+      }, `删除 ${a.recipientName} 的这条地址？`);
     }, 'danger'))))) : empty('还没有收货地址，先添加一条吧。'));
 }
 
@@ -207,6 +279,79 @@ async function viewOrder(id, admin = false) {
   const order = await api(`/api/${admin ? 'admin/' : ''}orders/${id}`);
   if (current()) await showOrder(order, admin);
 }
+
+const pendingUpdates = new Map();
+
+async function readUpdate(update) {
+  let reached = false;
+  for (const delay of [0, 500, 1500]) {
+    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+    if (!update.current() || !navigator.onLine) return;
+    try {
+      const result = await update.readResult();
+      if (result) return result;
+      reached = true;
+    } catch (error) {
+      if (!resultUnavailable(error)) throw error;
+      reached = false;
+    }
+  }
+  return reached ? null : undefined;
+}
+
+async function recoverUpdates() {
+  for (const [key, update] of pendingUpdates) {
+    if (update.checking) continue;
+    if (!update.current()) { pendingUpdates.delete(key); continue; }
+    update.checking = true;
+    try {
+      const latest = await readUpdate(update);
+      if (!update.current() || pendingUpdates.get(key) !== update) continue;
+      if (latest) {
+        pendingUpdates.delete(key);
+        notify(update.message);
+        if (['orders', 'cart', 'addresses', 'coupons', 'admin'].includes(path()) && !document.querySelector('#modal').open) await navigate();
+      } else if (latest === null) {
+        pendingUpdates.delete(key);
+        notify('暂未查到这次操作产生的更新。', true);
+      }
+    } catch (error) {
+      if (pendingUpdates.get(key) === update) pendingUpdates.delete(key);
+      if (update.current()) notify(errorMessage(error), true);
+    } finally { update.checking = false; }
+  }
+}
+
+async function confirmWrite(path, method, data, readResult, message) {
+  const current = captureView(true);
+  const key = `${method} ${path}`;
+  if (pendingUpdates.get(key)?.current()) throw new UserError('上一次操作仍在核对。');
+  try {
+    const updated = await write(path, method, data);
+    pendingUpdates.delete(key);
+    return updated;
+  } catch (error) {
+    if (!resultUnavailable(error)) throw error;
+    // 响应中断后只读已有记录，核对该次操作的目标状态。
+    const update = { current, readResult, message, checking: false };
+    const latest = await readUpdate(update);
+    if (latest) { pendingUpdates.delete(key); return latest; }
+    if (current()) {
+      pendingUpdates.set(key, update);
+      if (navigator.onLine) setTimeout(recoverUpdates, 2500);
+    }
+    throw new UserError('操作结果待确认，连接恢复或返回页面时会继续核对。');
+  }
+}
+
+function updateOrder(order, action, matches, data, admin = false) {
+  const detail = `/api/${admin ? 'admin/' : ''}orders/${order.id}`;
+  return confirmWrite(`${detail}/${action}`, 'POST', data, async () => {
+    const latest = await api(detail);
+    if (matches(latest)) return latest;
+  }, `订单 #${order.id} 的状态已更新。`);
+}
+
 export async function showOrder(order, admin = false) {
   const content = el('div', {}, badge(order.status), el('div', { class: 'order-items' }, order.items.map(item => el('div', { class: 'order-item' }, el('span', {}, `${item.productName} × ${item.quantity}`), el('strong', {}, money(item.lineAmount))))),
     line('原金额', money(order.originalAmount)), line('优惠', money(order.discountAmount)), line('应付', money(order.totalAmount)), order.coupon ? line('优惠券', order.coupon.name) : null,
@@ -217,18 +362,19 @@ export async function showOrder(order, admin = false) {
   if (admin && order.status === 'PAID' && order.address) actions.append(button('登记发货', () => {
     formDialog(`订单 #${order.id} 发货`, [['carrier', '承运方', { required: true, maxLength: 50 }], ['trackingNo', '运单号', { required: true, maxLength: 64 }]], '确认发货', async values => {
       const current = captureView(true);
-      const updated = await write(`/api/admin/orders/${order.id}/ship`, 'POST', values);
+      const updated = await updateOrder(order, 'ship', latest => latest.shipment?.carrier.trim() === values.carrier.trim()
+        && latest.shipment.trackingNo.trim() === values.trackingNo.trim(), values, true);
       if (!current()) return;
       notify('发货信息已保存。'); await navigate(); if (current()) await showOrder(updated, true);
     }, '仅登记人工发货信息，不代表调用真实物流服务。');
   }, ''));
   if (!admin) {
-    const action = (label, name) => button(label, async () => { const current = captureView(true); const updated = await write(`/api/orders/${order.id}/${name}`); if (!current()) return; notify('订单状态已更新。'); await navigate(); if (current()) await showOrder(updated); }, name === 'cancel' ? 'danger' : '');
+    const action = (label, name, matches) => button(label, async () => { const current = captureView(true); const updated = await updateOrder(order, name, matches); if (!current()) return; notify('订单状态已更新。'); await navigate(); if (current()) await showOrder(updated); }, name === 'cancel' ? 'danger' : '');
     if (order.status === 'PENDING_PAYMENT') {
-      if (new Date(order.expiresAt) > new Date()) actions.append(action('模拟支付', 'pay'));
-      actions.append(action('取消订单', 'cancel'));
+      if (new Date(order.expiresAt) > new Date()) actions.append(action('模拟支付', 'pay', latest => Boolean(latest.paidAt)));
+      actions.append(action('取消订单', 'cancel', latest => latest.status === 'CANCELED'));
     }
-    if (order.status === 'SHIPPED') actions.append(action('确认收货', 'receive'));
+    if (order.status === 'SHIPPED') actions.append(action('确认收货', 'receive', latest => latest.status === 'COMPLETED'));
   }
   content.append(actions); modal(`订单 #${order.id}`, content);
 }
@@ -238,8 +384,7 @@ async function ordersPage() {
   const params = new URLSearchParams({ page: String(page), size: '20' });
   if (query.get('status')) params.set('status', query.get('status'));
   const result = await api(`/api/orders?${params}`);
-  const orders = result.items; const pending = pendingOrder(state.user.id);
-  if (pending && orders.some(order => order.requestId === pending.requestId)) clearPendingOrder(state.user.id);
+  const orders = result.items;
   const status = field('status', '订单状态', { choices: ['PENDING_PAYMENT', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELED', 'CLOSED'].map(key => [key, statusNames[key]]), placeholder: '全部状态', value: query.get('status') || '' });
   const form = el('form', { class: 'toolbar' }, status.node, el('button', { type: 'submit', class: 'button' }, '筛选订单'));
   form.addEventListener('submit', event => { event.preventDefault(); go(`orders?${new URLSearchParams({ page: '1', status: status.input.value })}`); });
@@ -257,11 +402,12 @@ async function navigate() {
   main.replaceChildren(empty('正在加载…'));
   try {
     if (['cart', 'addresses', 'coupons', 'orders', 'admin', 'agent'].includes(route) && !state.user) {
+      if (!state.ready) { main.replaceChildren(empty('正在确认登录状态…')); return; }
       main.replaceChildren(heading('登录后继续', route === 'agent' ? '登录后即可咨询本人订单和平台交易规则。' : '登录即可管理你的购物车、地址、优惠券和订单。'), button('登录 / 注册', () => openAuth(), '')); return;
     }
     const render = { products: productsPage, activities: activitiesPage, cart: cartPage, addresses: addressesPage, coupons: couponsPage, orders: ordersPage,
       agent: () => agentPage(state.user, captureView()),
-      admin: () => adminPage(state.user, { go, viewOrder, guard: captureView, refresh: navigate }) }[route];
+      admin: () => adminPage(state.user, { go, viewOrder, guard: captureView, refresh: navigate, confirmWrite }) }[route];
     const view = render ? await render() : await productsPage();
     if (stamp === version && userId === state.user?.id) main.replaceChildren(view);
   } catch (error) {
@@ -270,6 +416,18 @@ async function navigate() {
   }
 }
 window.addEventListener('hashchange', navigate);
-try { await readIdentity(); }
-catch (error) { document.querySelector('#account').replaceChildren(button('重试登录状态', async () => { await readIdentity(); await navigate(); })); notify(errorMessage(error), true); }
+async function reconnect() {
+  if (!state.ready) {
+    await recoverIdentity();
+    if (state.ready) {
+      if (state.user) document.querySelector('#modal').close();
+      await navigate();
+    }
+  }
+  await Promise.all([recoverOrder(), recoverUpdates()]);
+}
+window.addEventListener('online', reconnect);
+window.addEventListener('focus', reconnect);
+await recoverIdentity();
 await navigate();
+void recoverOrder();

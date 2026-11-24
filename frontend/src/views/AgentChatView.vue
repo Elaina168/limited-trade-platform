@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth.ts'
 import { useAgentStore } from '../stores/agent.ts'
+const route = useRoute()
 const auth = useAuthStore()
 const agent = useAgentStore()
 const question = ref('')
@@ -32,6 +34,11 @@ async function confirmChange() {
   if (kind === 'delete') await agent.remove()
 }
 watch([() => auth.user?.id, () => auth.user?.role], () => { question.value = ''; confirming.value = null }, { flush: 'sync' })
+watch([() => route.query.orderId, () => auth.user?.id], ([value]) => {
+  if (auth.user && typeof value === 'string' && /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value))) {
+    question.value = '请查询订单 #' + value + ' 的当前状态。'
+  }
+}, { immediate: true })
 watch([() => agent.messages.length, () => agent.messages.at(-1)?.text, () => agent.messages.at(-1)?.state], async () => {
   const element = log.value
   const follow = element && element.scrollHeight - element.scrollTop - element.clientHeight < 90

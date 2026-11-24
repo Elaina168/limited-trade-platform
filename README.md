@@ -1,14 +1,35 @@
 # 限量商品营销交易平台
 
-从空 Spring Boot 工程开始的 Java 后端学习项目，用 Git 记录需求分析、表设计、编码、验证和阶段复盘。
+基于 Java 21、Spring Boot 和 Vue 3 的限量交易商城。买家可浏览商品、参与活动、领券、结算和查询订单。管理员可维护商品与活动并登记发货。交易助手可查询本人订单、解释公开交易规则并展示引用来源。
 
-## 当前状态
+## 启动与验收
+
+| 入口 | 用途 |
+| --- | --- |
+| [本机运行说明](frontend/RUNNING.md) | 准备 MySQL、Redis、RabbitMQ，启动 Java 和 Vue |
+| [人工验收清单](docs/manual-acceptance.md) | 检查默认商城、买家与管理员流程、交易助手和自动恢复 |
+| [数据库初始化](#数据库初始化首次准备) | 首次建库、执行迁移并导入默认商城数据 |
+| [Nginx 静态入口](docs/learning/47-strengthening-vue-static.md) | 提供 Vue 和同源 Java API |
+| [自动验收与 CI](docs/learning/46-strengthening-acceptance-ci.md) | 重现确定性构建、测试及浏览器验收 |
+
+[GitHub 仓库](https://github.com/Elaina168/limited-trade-platform) · [开发分支](https://github.com/Elaina168/limited-trade-platform/tree/codex/bootstrap-boot) · [GitHub Actions](https://github.com/Elaina168/limited-trade-platform/actions)
+
+## 核心流程
+
+- 下单在 MySQL 事务内扣商品库存、占用活动名额和优惠券，按请求标识去重。超时关单使用 Outbox、RabbitMQ 和扫描补偿。 [交易故障演练](docs/learning/28-trade-drill.md)
+- 商品读取使用 Caffeine 与 Redis。本人订单深分页在指定大偏移路径先取当页主键，再读取完整订单。 [缓存一致性](docs/learning/52-strengthening-cache-consistency.md) · [分页测量](docs/learning/50-strengthening-mysql-pagination.md)
+- 交易助手基于 Spring AI，使用服务端身份执行只读工具，支持 SSE、本人会话历史、费用预算和规则引用。 [预算记录](docs/learning/55-strengthening-agent-budget.md) · [商城规则知识库](docs/learning/61-storefront-rag-corpus.md)
+- 响应异常时，页面自动核对下单、订单状态、助手回答等结果。 [人工验收清单](docs/manual-acceptance.md)
+
+默认开发商城扩展脚本新增 720 件商品、120 个活动和 240 种优惠券。活动时间随首次导入时间生成。Compose 已准备五服务编排，真实容器部署验收待执行。 [规模验收](docs/learning/60-catalog-scale-and-regression.md) · [Compose 进度](docs/learning/48-strengthening-compose.md#验收进度)
+
+## 早期实现记录
 
 2026-10-19：已实现活动专用满减券、活动/普通单商品下单地址快照、Redis Lua下单入口限流、管理员整单发货登记与买家确认收货、普通商品购物车多商品结算、订单明细与收货地址快照，以及商品维护、一级商品分类与分页筛选、用户购物车、用户收货地址、Session 登录与角色权限、创建订单与本人订单查询、模拟支付、主动取消、定时超时关闭、管理员订单分页筛选、最小限时限量活动、Redis 商品列表缓存，以及 Outbox + RabbitMQ 可靠超时消息。购物车只保存购买意向；创建订单才扣商品库存，活动订单还扣活动名额；取消或关闭只归还一次。支持用户注册，默认创建普通用户账号。
 
 第二十二阶段已完成（2026-10-20）：API请求追踪、JSON日志、耗时及安全异常栈、六种订单提交事件、文件滚动和前端错误编号。4项真实测试数据库/MockMvc定向测试及2个关联浏览器契约场景通过，没有全量回归；详见[第二十二阶段学习记录](docs/learning/22-application-logging.md)。集中采集检索待做。
 
-当前最新交付为第二十八阶段：隔离测试库下，两份真实JVM经独立Nginx入口完成正常下单/模拟支付/发货/收货、MQ TTL关闭与重复投递幂等、Broker暂停后的Outbox补发和扫描补偿。三项专项通过；必须显式-Dnative.trade.drill=true才执行，普通测试跳过，故障会短暂影响本机Broker所有vhost。本轮资源已清理，原8081/8082只读检查环境保留。详见[交易与MQ故障记录](docs/learning/28-trade-drill.md)。未全量回归、未提交推送，Docker继续延后。
+第二十八阶段的原生故障演练：隔离测试库下，两份真实JVM经独立Nginx入口完成正常下单/模拟支付/发货/收货、MQ TTL关闭与重复投递幂等、Broker暂停后的Outbox补发和扫描补偿。三项专项通过；必须显式-Dnative.trade.drill=true才执行，普通测试跳过，故障会短暂影响本机Broker所有vhost。本轮资源已清理，原8081/8082只读检查环境保留。详见[交易与MQ故障记录](docs/learning/28-trade-drill.md)。未全量回归、未提交推送，Docker继续延后。
 
 第二十一阶段已一次补齐当前用户与管理员业务页面，使用同源HTML/CSS/原生JavaScript，无前端框架或CDN，见[第二十一阶段学习记录](docs/learning/21-web-ui.md)。当时6项真实数据库/MockMvc用例与浏览器主线及修复用例通过；第二十阶段的530项全量结果保留为历史证据，不表示本阶段重新全量通过。
 
@@ -636,3 +657,7 @@ Agent 增加业务角色准入、服务端工具身份上下文、调用与结�
 ## 2026-11-24 补强 14
 
 规则检索新增默认关闭的本地重排序和按需规则查询改写。固定对照结果与向量存储选型见[补强 14 记录](docs/learning/59-strengthening-retrieval-experiments.md)。
+
+## 2026-11-24 扩充商城 RAG 规则库
+
+规则库扩充到 13 篇、49 个片段，覆盖商品搜索、限量活动、优惠券、购物车、地址、下单重试和助手会话。现有索引重建方式和固定题集结果见[商城 RAG 扩充记录](docs/learning/61-storefront-rag-corpus.md)。

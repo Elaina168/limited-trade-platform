@@ -24,7 +24,7 @@ async function store() {
   return { auth, checkout: useCheckoutStore() }
 }
 
-test('unknown order response survives store recreation and retries identical requestId', async () => {
+test('lost order response is recovered automatically with the identical requestId', async () => {
   let lost = true
   const bodies: unknown[] = []
   globalThis.fetch = async (input, options = {}) => {
@@ -34,13 +34,27 @@ test('unknown order response survives store recreation and retries identical req
     return json({ id: 81, totalAmount: 12 })
   }
   const { checkout } = await store()
+  assert.equal((await checkout.submit('/api/orders/checkout', data)).id, 81)
+  assert.equal(bodies.length, 2)
+  assert.deepEqual(bodies[0], bodies[1])
+  assert.equal(checkout.pending, null)
+})
+
+test('a saved checkout intent is resolved automatically when authentication is restored', async () => {
+  globalThis.fetch = async input => String(input).endsWith('/csrf')
+    ? json({ headerName: 'X-CSRF-TOKEN', token: 'a' }) : Promise.reject(new TypeError('offline'))
+  const { checkout } = await store()
   await assert.rejects(checkout.submit('/api/orders/checkout', data))
-  assert.ok(checkout.pending)
+  const requestId = checkout.pending!.requestId
   setActivePinia(createPinia())
   const resumed = (await store()).checkout
-  assert.ok(resumed.pending)
-  await resumed.retry()
-  assert.deepEqual(bodies[0], bodies[1])
+  globalThis.fetch = async (input, options) => {
+    if (String(input).endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'a' })
+    assert.deepEqual(JSON.parse(String(options?.body)), { ...data, requestId })
+    return json({ id: 82, requestId })
+  }
+  await resumed.recoverPending()
+  assert.equal(resumed.recoveredOrder?.id, 82)
   assert.equal(resumed.pending, null)
 })
 
@@ -69,7 +83,7 @@ test('fresh CSRF denial clears a new intent but retry CSRF denial keeps unknown 
   await assert.rejects(checkout.submit('/api/orders/checkout', data))
   const id = checkout.pending!.requestId
   mode = 'csrf-denied'
-  await assert.rejects(checkout.retry(), HttpError)
+  await checkout.recoverPending()
   assert.equal(checkout.pending!.requestId, id)
 })
 

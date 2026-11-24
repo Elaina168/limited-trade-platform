@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { AuthStatus, CurrentUser, LoginCredentials } from '../types/auth.ts'
 import * as api from '../api/auth.ts'
-import { advanceSession, errorMessage, HttpError, onUnauthorized, sessionRevision } from '../api/http.ts'
+import { advanceSession, errorMessage, HttpError, isUncertainWrite, onUnauthorized, sessionRevision } from '../api/http.ts'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<CurrentUser | null>(null)
@@ -55,8 +55,19 @@ export const useAuthStore = defineStore('auth', () => {
     status.value = 'loading'
     error.value = ''
     try {
-      await api.login(credentials, expected)
-      const current = await api.currentUser(expected)
+      let loginFailure: unknown
+      try { await api.login(credentials, expected) }
+      catch (cause) {
+        if (!isUncertainWrite(cause)) throw cause
+        loginFailure = cause
+      }
+      let current: CurrentUser
+      try { current = await api.currentUser(expected) }
+      catch (cause) {
+        if (!isUncertainWrite(cause)) throw cause
+        current = await api.currentUser(expected)
+      }
+      if (loginFailure && current.username !== credentials.username) throw loginFailure
       if (expected !== sessionRevision()) return
       user.value = current
       status.value = 'authenticated'

@@ -15,11 +15,29 @@ watch(() => auth.status, status => {
   }
 })
 
+const reconnectDelays = [1000, 3000, 7000]
+let reconnectAttempts = 0
+watch(() => auth.status, (status, _, onCleanup) => {
+  if (status === 'authenticated' || status === 'anonymous') reconnectAttempts = 0
+  if (status !== 'failed' || reconnectAttempts >= reconnectDelays.length) return
+  const timer = window.setTimeout(() => {
+    reconnectAttempts++
+    void auth.restore(true)
+  }, reconnectDelays[reconnectAttempts])
+  onCleanup(() => window.clearTimeout(timer))
+}, { immediate: true })
+
 function refreshIdentity() {
   if (!auth.busy && document.visibilityState === 'visible') void auth.restore(true)
 }
-onMounted(() => window.addEventListener('focus', refreshIdentity))
-onUnmounted(() => window.removeEventListener('focus', refreshIdentity))
+onMounted(() => {
+  window.addEventListener('focus', refreshIdentity)
+  window.addEventListener('online', refreshIdentity)
+})
+onUnmounted(() => {
+  window.removeEventListener('focus', refreshIdentity)
+  window.removeEventListener('online', refreshIdentity)
+})
 </script>
 
 <template>

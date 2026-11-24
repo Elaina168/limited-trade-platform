@@ -4,8 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.ts'
 import { useCheckoutStore } from '../stores/checkout.ts'
 import { activity, productById, myCoupons } from '../api/catalog.ts'
-import { addresses, setCartQuantity } from '../api/checkout.ts'
+import { addresses, cartItems, setCartQuantity } from '../api/checkout.ts'
 import { errorMessage, HttpError, RequestError, SessionChangedError } from '../api/http.ts'
+import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
 import type { Activity, Product, UserCoupon } from '../types/catalog.ts'
 import type { Address } from '../types/checkout.ts'
 
@@ -81,11 +82,25 @@ function validQuantity() {
 async function saveCart() {
   if (blocked.value || !product.value || !validQuantity()) return
   const current = ++operation
+  const id = product.value.id
+  const count = quantity.value
+  const success = `购物车中该商品数量已设为 ${count}。`
   saving.value = true; error.value = ''; notice.value = ''
   try {
-    await setCartQuantity(product.value.id, quantity.value)
-    if (current === operation) notice.value = `购物车中该商品数量已设为 ${quantity.value}。`
-  } catch (cause) { if (current === operation && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
+    await setCartQuantity(id, count)
+    if (current === operation) notice.value = success
+  } catch (cause) {
+    if (current !== operation || cause instanceof SessionChangedError) return
+    if (!canReconcileWrite(cause)) { error.value = errorMessage(cause); return }
+    notice.value = '正在核对购物车数量…'
+    const result = await reconcileWrite(cartItems, cart => cart.some(item => item.productId === id && item.quantity === count),
+      () => current === operation)
+    if (current !== operation) return
+    const actual = result?.snapshot?.find(item => item.productId === id)?.quantity
+    notice.value = !result ? '' : result.confirmed ? success : result.snapshot
+      ? (actual === undefined ? '购物车中暂未查到该商品。' : `购物车中该商品当前数量为 ${actual}。`)
+      : '暂时无法核对购物车数量。'
+  }
   finally { if (current === operation) saving.value = false }
 }
 async function submit() {
@@ -100,7 +115,7 @@ async function submit() {
       activityId: event.value?.id ?? null, userCouponId: userCouponId.value ? Number(userCouponId.value) : null,
     })
     await router.push(`/orders/${order.id}`)
-  } catch (cause) { if (!(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
+  } catch (cause) { if (!checkout.pending && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
 }
 watch([() => route.params.productId, () => route.query.activityId, () => auth.user?.id], reset, { flush: 'sync' })
 watch([() => route.params.productId, () => route.query.activityId, () => auth.user?.id, () => auth.status], () => {

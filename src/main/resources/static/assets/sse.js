@@ -57,7 +57,7 @@ export async function readAgentStream(body, onEvent, signal) {
         if (completed) return result;
       }
       buffer = buffer.slice(start);
-      if (chunk.done) throw new StreamProtocolError('连接已结束，但尚未确认回答完成；结果可能已保存，请勿自动重复发送。');
+      if (chunk.done) throw new StreamProtocolError('连接已结束，但尚未确认回答完成。');
     }
     return result;
   } finally {

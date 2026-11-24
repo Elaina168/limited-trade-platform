@@ -74,6 +74,12 @@ export async function verifyAgent(browser, base, fixture, model, mysql) {
   assert.equal((await missing.json()).status, 404)
   console.log('通过：认证响应 no-store，API 保留权限 403 和订单 404 JSON')
 
+  const orderId = await mysql('SELECT id FROM trade_order')
+  await page.goto(base + '/orders/' + orderId)
+  await page.getByRole('link', { name: '问这笔订单', exact: true }).click()
+  await page.getByRole('heading', { name: '交易助手', exact: true }).waitFor()
+  assert.equal(await page.getByLabel('你的问题', { exact: true }).inputValue(), '请查询订单 #' + orderId + ' 的当前状态。')
+  console.log('通过：从本人订单详情进入助手并准确预填订单号')
   await page.goto(base + '/agent')
   await page.reload()
   await page.getByRole('heading', { name: '交易助手', exact: true }).waitFor()
@@ -102,6 +108,11 @@ export async function verifyAgent(browser, base, fixture, model, mysql) {
   assert.equal(await mysql(turns), '1')
   const streamPath = new URL(stream.url()).pathname
   const historyPath = streamPath.slice(0, -'/stream'.length)
+  const savedHistory = await page.request.get(base + historyPath)
+  assert.equal(savedHistory.status(), 200)
+  const { clientTurnId } = stream.request().postDataJSON()
+  assert.match(clientTurnId, /^[0-9a-f-]{36}$/)
+  assert.equal((await savedHistory.json()).turns[0].clientTurnId, clientTurnId)
   const conversationPath = historyPath.slice(0, -'/messages'.length)
   const conversationId = conversationPath.split('/').at(-1)
   const saved = page.getByRole('button', { name: '会话 ' + conversationId.slice(0, 8), exact: true })
@@ -145,6 +156,8 @@ export async function verifyAgent(browser, base, fixture, model, mysql) {
   assert.equal(model.rounds[1].closed, true, '停止后本地模型的 HTTP 连接仍未关闭')
   assert.equal(await mysql(busy), '0')
   assert.equal(await mysql(turns), '1')
+  await page.getByText('本轮未保存回答。', { exact: true }).waitFor()
+  assert.equal(model.rounds.length, 2)
   console.log('通过：首段先到，生成中只读到已提交历史，停止传到上游并释放生成资格')
 
   const button = name => page.getByRole('button', { name, exact: true })

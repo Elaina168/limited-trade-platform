@@ -5,6 +5,8 @@ import com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -44,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AgentEvaluationV3Test {
     private static final boolean LIVE = "live".equals(System.getProperty("agent.evaluation.v3"));
     private static EvaluationModelFixture model;
+    private static Path index;
 
     @DynamicPropertySource
     static void upstream(DynamicPropertyRegistry properties) throws IOException {
@@ -54,11 +57,16 @@ class AgentEvaluationV3Test {
             properties.add("app.agent.base-url", model::url);
             properties.add("app.agent.api-key", () -> "evaluation-local");
         }
-        properties.add("app.agent.rag.index-file", () -> "tools/evaluation-baselines/agent-v3-index.json");
+        index = Files.createTempDirectory("agent-v3-index-").resolve("rules.json");
+        properties.add("app.agent.rag.index-file", () -> index.toString());
     }
 
-    @AfterAll static void stopModel() {
+    @AfterAll static void cleanup() throws IOException {
         if (model != null) model.close();
+        if (index != null) {
+            Files.deleteIfExists(index);
+            Files.delete(index.getParent());
+        }
     }
 
     @Autowired AgentConversationService conversations;
