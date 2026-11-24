@@ -242,6 +242,26 @@ class TradeAgentProtocolTest {
         assertThat(requests.getFirst().path("tools").toString()).contains("search_trade_rules").doesNotContain("\"name\":\"get_trade_rules\"");
     }
 
+    @Test void ruleFollowUpRewritesOnlyTheToolQueryUsingThePreviousUserMessage() throws Exception {
+        var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
+        String rewritten = "模拟支付 还有效吗";
+        when(knowledge.search(rewritten)).thenReturn(
+                new com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.SearchResult("NO_EVIDENCE", List.of()));
+        replies.add(toolReply("search_trade_rules", "{\"query\":\"还有效吗\"}"));
+        replies.add(answerReply());
+        var history = List.<org.springframework.ai.chat.messages.Message>of(
+                new org.springframework.ai.chat.messages.UserMessage("模拟支付的规则是什么？"),
+                new org.springframework.ai.chat.messages.AssistantMessage("其他主题是确认收货。"));
+        runner("app.agent.rag.query-rewrite-enabled=true")
+                .withBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class, () -> knowledge)
+                .run(context -> {
+                    var response = context.getBean(TradeAgentService.class).chatTurn(7301, "那还有效吗？", history);
+                    assertThat(response.response().toolCalls()).isEqualTo(1);
+                });
+        verify(knowledge).search(rewritten);
+        assertThat(requests).hasSize(2);
+    }
+
     @Test void oversizedRuleResultNeverReachesAnotherModelRoundOrAuditPayload() throws Exception {
         var knowledge = mock(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class);
         String privateFixture = "只用于测试的长资料标记";

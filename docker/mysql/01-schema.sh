@@ -21,7 +21,8 @@ for script in \
     015_agent_conversation_visible_history.sql \
     016_agent_usage_budget.sql \
     seed.sql \
-    demo_catalog.sql
+    demo_catalog.sql \
+    demo_catalog_scale.sql
 do
     mysql --protocol=socket --user=root --database=limited_trade_platform \
         --default-character-set=utf8mb4 < "/bootstrap/${script}"

@@ -55,7 +55,7 @@ class RuleRetrievalBaselineTest {
             try {
                 for (var configuration : CONFIGURATIONS) {
                     var settings = new RagProperties(true, modelPath, index, 320,
-                            configuration.topK(), configuration.threshold(), false);
+                            configuration.topK(), configuration.threshold(), false, RagProperties.RetrievalMode.VECTOR, false, false);
                     var knowledge = new RuleKnowledgeBase(model, settings, json);
                     var run = new LinkedHashMap<String, Object>();
                     var rows = new ArrayList<Map<String, Object>>();

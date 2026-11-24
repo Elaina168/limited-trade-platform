@@ -6,7 +6,7 @@ Vue七阶段本机交付已完成。用户随后确认继续补强当前Java交�
 
 顺序：可移植验收与CI → Vue静态托管 → 正确性/吞吐/延迟基线 → MySQL调优 → 缓存基础 → 多级缓存/过滤器/一致性和故障治理 → 令牌桶 → 会话列表/历史 → 调用/Token/费用预算 → 工具权限/攻击样本 → 持续评测 → 混合检索/RRF → 重排/改写实验与向量库决策 → 收尾进行 Compose 真实部署与发布回滚、告警和持续运行。
 
-实际执行顺序为补强1、2 → 补强4–14 → 收尾补验补强3、实施补强15。补强3编号和已写的部署文件保留。后续性能测试使用隔离的本机环境，部署后的结果另记。已留存[补强4的原生环境基线](learning/49-strengthening-trade-baseline.md)，补强5的本人订单深分页已验证，补强6的商品缓存基础已验证，[补强7的多级缓存和故障恢复](learning/52-strengthening-cache-consistency.md)已通过双实例验证，[补强8的交易入口令牌桶](learning/53-strengthening-order-token-bucket.md)已通过双实例验证，[补强9的会话列表与历史读取](learning/54-strengthening-agent-history.md)已通过浏览器和迁移验证，[补强10的调用与费用预算](learning/55-strengthening-agent-budget.md)已完成隔离验证，[补强11的工具授权与审计](learning/56-strengthening-agent-tool-access.md)已完成防御回归，[补强12的多配置评测基线](learning/57-strengthening-evaluation-baselines.md)已完成本地评测，下一阶段为补强13。
+实际执行顺序为补强1、2 → 补强4–14 → 收尾补验补强3、实施补强15。补强3编号和已写的部署文件保留。后续性能测试使用隔离的本机环境，部署后的结果另记。已留存[补强4的原生环境基线](learning/49-strengthening-trade-baseline.md)，补强5的本人订单深分页已验证，补强6的商品缓存基础已验证，[补强7的多级缓存和故障恢复](learning/52-strengthening-cache-consistency.md)已通过双实例验证，[补强8的交易入口令牌桶](learning/53-strengthening-order-token-bucket.md)已通过双实例验证，[补强9的会话列表与历史读取](learning/54-strengthening-agent-history.md)已通过浏览器和迁移验证，[补强10的调用与费用预算](learning/55-strengthening-agent-budget.md)已完成隔离验证，[补强11的工具授权与审计](learning/56-strengthening-agent-tool-access.md)已完成防御回归，[补强12的多配置评测基线](learning/57-strengthening-evaluation-baselines.md)已完成本地评测，[补强13的混合检索](learning/58-strengthening-hybrid-retrieval.md)已完成固定题集对照，保留向量默认，[补强14的重排序与按需改写](learning/59-strengthening-retrieval-experiments.md)已完成对照，保留本地索引，下一步收尾补验补强3的 Docker 部署。
 
 重叠Agent能力按用户确认在当前项目和未来独立Agent项目都完整实现，不能据后者清单取消当前预算、历史、安全或评测。Python、多Agent、HITL和写操作审批等属于未来项目；当前保持Java只读助手与交易单体。
 

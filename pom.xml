@@ -160,6 +160,8 @@
                                 <include>OrderTimeoutConsumerTest.java</include>
                                 <include>OrderTimeoutSenderTest.java</include>
                                 <include>RuleDocumentsTest.java</include>
+                                <include>RuleRankingTest.java</include>
+                                <include>RuleRetrievalExperimentsTest.java</include>
                                 <include>TradeAgentProtocolTest.java</include>
                                 <include>TradeAgentStreamTest.java</include>
                             </includes>

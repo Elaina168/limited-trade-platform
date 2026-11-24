@@ -20,3 +20,8 @@ app.agent.rag.top-k=3
 app.agent.rag.similarity-threshold=0.55
 # 资料、模型或分块参数变化后显式设true启动一次，完成后改回false。
 app.agent.rag.rebuild-index=false
+# 可选 vector、keyword 或 hybrid。默认向量模式。
+app.agent.rag.retrieval-mode=vector
+# 两项独立的本地实验均默认关闭。
+app.agent.rag.rerank-enabled=false
+app.agent.rag.query-rewrite-enabled=false

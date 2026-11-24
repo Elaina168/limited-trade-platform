@@ -24,7 +24,7 @@ class RuleKnowledgeBaseTest {
 
     private RagProperties settings(int chars) {
         return new RagProperties(true, Path.of("tools/models/bge-small-zh-v1.5"), directory.resolve("rules.json"),
-                chars, 3, 0.7, false);
+                chars, 3, 0.7, false, RagProperties.RetrievalMode.VECTOR, false, false);
     }
 
     @Test void actualIndexReloadPreservesResultsWithoutDuplicateChunks() throws Exception {
@@ -61,7 +61,7 @@ class RuleKnowledgeBaseTest {
             mapper.writeValue(file.toFile(), json);
             assertThatThrownBy(() -> new RuleKnowledgeBase(model, settings(320), mapper))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("重建");
-            var rebuild = new RagProperties(true, settings(320).modelDirectory(), file, 320, 3, 0.55, true);
+            var rebuild = new RagProperties(true, settings(320).modelDirectory(), file, 320, 3, 0.55, true, RagProperties.RetrievalMode.VECTOR, false, false);
             var replaced = new RuleKnowledgeBase(model, rebuild, mapper);
             assertThat(replaced.chunkCount()).isEqualTo(original.chunkCount());
             assertThat(new RuleKnowledgeBase(model, settings(320), mapper).chunkCount()).isEqualTo(original.chunkCount());

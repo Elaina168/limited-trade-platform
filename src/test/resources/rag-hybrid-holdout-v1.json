@@ -1,0 +1,14 @@
+[
+  {"id":"h13-01","query":"expiresAt 到点了还允许模拟支付吗？","evidence":{"payment":"已经到达截止时刻也不能付款"}},
+  {"id":"h13-02","query":"markCanceled 重复调用时会再恢复库存吗？","evidence":{"cancellation":"不会再次归还库存"}},
+  {"id":"h13-03","query":"标成 CLOSED 后，仅靠状态能区分 RabbitMQ 和定时扫描吗？","evidence":{"timeout":"单凭CLOSED状态不能确定"}},
+  {"id":"h13-04","query":"markCompleted 重复确认时是否改写收货时间？","evidence":{"fulfillment":"不覆盖原收货时间"}},
+  {"id":"h13-05","query":"findOwnedOrder 遇到不归本人的订单，HTTP 返回什么？","evidence":{"order-access":"不存在和属于他人的订单都返回404"}},
+  {"id":"h13-06","query":"未付款太久，一直没变状态，还能付款吗？系统是怎么关单的？","evidence":{"payment":"已经到达截止时刻也不能付款","timeout":"并不表示仍允许支付"}},
+  {"id":"h13-07","query":"翻到第二页只剩两笔，页面的 total 是两笔还是所有符合条件的笔数？","evidence":{"order-access":"不是当前页条数"}},
+  {"id":"h13-08","query":"已完成订单重新登记了不同的运单号，会怎样处理？","evidence":{"fulfillment":"使用不同发货信息会产生状态冲突"}},
+  {"id":"h13-09","query":"订单支付支持信用卡分期吗，分期年化利率多少？","evidence":{}},
+  {"id":"h13-10","query":"取消订单后，平台积分和会员等级会怎么变？","evidence":{}},
+  {"id":"h13-11","query":"超过承运时效可以申请运费险理赔吗？","evidence":{}},
+  {"id":"h13-12","query":"跨境商品购买后应该如何开具增值税专用发票？","evidence":{}}
+]

@@ -56,6 +56,24 @@ class AgentConfigurationTest {
                 });
     }
 
+    @Test void retrievalExperimentsCanBeEnabledIndependently() {
+        runner.withPropertyValues("app.agent.enabled=true", "app.agent.api-key=test-key",
+                        "app.agent.rag.rerank-enabled=true", "app.agent.rag.query-rewrite-enabled=true")
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test void keywordOnlyStartsWithoutLocalEmbeddingFiles() {
+        runner.withPropertyValues("app.agent.enabled=true", "app.agent.api-key=test-key",
+                        "app.agent.rag.enabled=true", "app.agent.rag.retrieval-mode=keyword",
+                        "app.agent.rag.model-directory=tools/missing-model")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    var result = context.getBean(com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase.class)
+                            .search("付款期限 expiresAt 到了还能支付吗？");
+                    assertThat(result.chunks()).isNotEmpty();
+                });
+    }
+
     @Test void enabledRagRequiresLocalModelAndValidSettings() {
         runner.withPropertyValues("app.agent.enabled=true", "app.agent.api-key=test-key",
                         "app.agent.rag.enabled=true", "app.agent.rag.model-directory=tools/missing-model")

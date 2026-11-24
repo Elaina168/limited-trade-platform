@@ -24,6 +24,10 @@ const env = process.env
 const nginx = env.ACCEPTANCE_NGINX
 const benchmarkMode = process.argv.includes('--benchmark')
 const paginationMode = process.argv.includes('--mysql-pagination')
+const catalogScaleMode = process.argv.includes('--catalog-scale')
+const apiOnly = benchmarkMode || paginationMode || catalogScaleMode
+const catalogProfile = env.CATALOG_SCALE_PROFILE ?? 'off'
+const catalogCache = catalogScaleMode && catalogProfile !== 'off'
 const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) =>
   !/^(SPRING_|APP_|SERVER_|LOGGING_|AGENT_|DEEPSEEK_|MYSQL_|JAVA_TOOL_OPTIONS$|JDK_JAVA_OPTIONS$|_JAVA_OPTIONS$)/i.test(key)))
 
@@ -114,7 +118,7 @@ async function probe(origin) {
 const mysqlPort = port('ACCEPTANCE_MYSQL_PORT', 13306)
 const javaPort = port('ACCEPTANCE_JAVA_PORT', 18080)
 const webPort = port('ACCEPTANCE_WEB_PORT', 14173)
-const redisPort = benchmarkMode ? port('BENCHMARK_REDIS_PORT', 16379) : undefined
+const redisPort = benchmarkMode || catalogCache ? port('BENCHMARK_REDIS_PORT', 16379) : undefined
 const mqPort = benchmarkMode ? port('BENCHMARK_MQ_PORT', 5679) : undefined
 const backend = 'http://' + loopback + ':' + javaPort
 const base = 'http://' + loopback + ':' + webPort
@@ -138,10 +142,13 @@ process.once('SIGINT', onSignal)
 process.once('SIGTERM', onSignal)
 
 try {
-  const ports = benchmarkMode || paginationMode ? [mysqlPort, javaPort] : [mysqlPort, javaPort, webPort]
+  assert.equal([benchmarkMode, paginationMode, catalogScaleMode].filter(Boolean).length <= 1, true)
+  if (catalogScaleMode) assert.ok(['off', 'redis-fixed', 'local-bloom-token'].includes(catalogProfile))
+  const ports = apiOnly ? [mysqlPort, javaPort] : [mysqlPort, javaPort, webPort]
+  if (redisPort !== undefined) assert.ok(!ports.includes(redisPort), 'Redis 必须使用独立端口')
   assert.equal(new Set(ports).size, ports.length, '本次启动的服务端口必须互不相同')
   await Promise.all([access(artifact),
-    ...(benchmarkMode || paginationMode ? [] : [access(resolve(frontend, 'dist/index.html'))]),
+    ...(apiOnly ? [] : [access(resolve(frontend, 'dist/index.html'))]),
     ...ports.map(checkPort)])
   const parent = await realpath(resolve(root, 'target'))
   directory = await mkdtemp(resolve(parent, 'browser-acceptance-'))
@@ -175,13 +182,16 @@ try {
   const setup = await Promise.all(['schema.sql', ...migrations].map((name) => readFile(resolve(sqlDir, name), 'utf8')))
   mysql(setup.join('\n') + "\nINSERT INTO product(name,price,stock,status) VALUES ('" + fixture.product + "',19.90,10,'ON_SALE');")
 
+  const catalogScale = catalogScaleMode ? await import('./catalog-scale.mjs') : null
+  if (catalogScale) catalogScale.seedCatalogScale(mysql, await readFile(resolve(sqlDir, 'demo_catalog_scale.sql'), 'utf8'))
+
   // Windows 的 PATH 可能是 Oracle 转发程序。启动实际 JVM 才能等待它退出并释放文件。
   const javaName = process.platform === 'win32' ? 'java.exe' : 'java'
   const javaCommand = env.ACCEPTANCE_JAVA ?? (env.JAVA_HOME ? resolve(env.JAVA_HOME, 'bin', javaName) : javaName)
   const settings = run(javaCommand, ['-XshowSettings:properties', '-version'], { env: childEnv, timeout: 10_000 })
   const javaHome = /^\s*java\.home\s*=\s*(.+)$/m.exec(settings.stderr)?.[1].trim()
   assert.ok(javaHome, 'JVM 未报告 java.home')
-  if (nginx && !benchmarkMode && !paginationMode) model = await startModel()
+  if (nginx && !apiOnly) model = await startModel()
   const java = start('java', resolve(javaHome, 'bin', javaName), [
     ...(benchmarkMode ? ['-Xms256m', '-Xmx768m', '-Duser.timezone=Asia/Shanghai'] : []),
     '-jar', artifact, '--server.address=' + loopback, '--server.port=' + javaPort,
@@ -197,7 +207,14 @@ try {
       '--app.order-rate-limit.key-prefix=bench:' + runId + ':limit',
       '--app.order-message.name-prefix=bench-' + runId,
     ] : [
-      '--app.product-cache.enabled=false', '--app.order-rate-limit.enabled=false',
+      '--app.product-cache.enabled=' + catalogCache, '--app.order-rate-limit.enabled=' + catalogCache,
+      ...(catalogCache ? [
+        '--spring.data.redis.port=' + redisPort, '--app.product-cache.key=scale:' + runId + ':catalog',
+        '--app.product-cache.local-enabled=' + (catalogProfile === 'local-bloom-token'),
+        '--app.product-cache.bloom-enabled=' + (catalogProfile === 'local-bloom-token'),
+        '--app.order-rate-limit.key-prefix=scale:' + runId + ':limit',
+        '--app.order-rate-limit.algorithm=' + (catalogProfile === 'redis-fixed' ? 'fixed-window' : 'token-bucket'),
+      ] : []),
       '--app.order-message.enabled=false', '--app.order-message.monitor.enabled=false', '--app.scheduling.enabled=false',
     ]),
   ], { cwd: directory, env: {
@@ -220,6 +237,8 @@ try {
     const jvmLog = resolve(directory, 'jvm.log')
     await ready(sampler, async () => (await readFile(jvmLog, 'utf8')).startsWith('{'))
     await benchmark({ root, backend, mysql, redisPort, mqPort, runId, artifact, jvmLog })
+  } else if (catalogScale) {
+    await catalogScale.verifyCatalogScale({ root, backend, mysql, runId, profile: catalogProfile, fixture })
   } else if (paginationMode) {
     const { verifyPagination } = await import('./mysql-pagination.mjs')
     await verifyPagination({ root, backend, mysql, runId, artifact })

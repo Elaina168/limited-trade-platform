@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpTimeoutException;
@@ -20,6 +21,7 @@ import java.util.Arrays;
 import java.util.stream.Stream;
 import com.elaina.limitedtrade.agent.rag.RuleKnowledgeBase;
 import com.elaina.limitedtrade.agent.rag.RuleChunk;
+import com.elaina.limitedtrade.agent.rag.RuleQueryRewrite;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,7 +122,12 @@ public class TradeAgentService {
     private AgentTurn runTurn(long userId, String message, List<Message> history, AgentStream stream, HttpClient modelClient) {
         var run = new RunState(properties.requestTimeout(), stream);
         var scope = AgentToolAccess.issue(userId);
-        var callbacks = Arrays.stream(tools).map(tool -> trackedTool(tool, run, scope)).toList();
+        String previousQuestion = properties.rag().queryRewriteEnabled()
+                ? history.reversed().stream().filter(UserMessage.class::isInstance)
+                        .findFirst().map(Message::getText).orElse("")
+                : "";
+        var callbacks = Arrays.stream(tools)
+                .map(tool -> trackedTool(tool, run, scope, message, previousQuestion)).toList();
         var options = OpenAiChatOptions.builder().model(properties.model()).maxTokens(properties.maxOutputTokens())
                 .temperature(0.0).streamUsage(stream != null).extraBody(Map.of("thinking", Map.of("type", "disabled")))
                 .internalToolExecutionEnabled(false).toolCallbacks(callbacks).toolContext(scope.values()).build();
@@ -337,7 +344,8 @@ public class TradeAgentService {
         }
     }
 
-    private ToolCallback trackedTool(ToolCallback delegate, RunState run, AgentToolAccess.Scope scope) {
+    private ToolCallback trackedTool(ToolCallback delegate, RunState run, AgentToolAccess.Scope scope,
+                                     String question, String previousQuestion) {
         return new ToolCallback() {
             @Override public ToolDefinition getToolDefinition() { return delegate.getToolDefinition(); }
             @Override public String call(String input) { return call(input, null); }
@@ -350,7 +358,12 @@ public class TradeAgentService {
                     if (context == null || !scope.matches(context)) {
                         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "工具缺少服务端授权上下文");
                     }
-                    validateArguments(input, getToolDefinition());
+                    var arguments = validateArguments(input, getToolDefinition());
+                    if (properties.rag().queryRewriteEnabled() && "search_trade_rules".equals(name)) {
+                        String original = arguments.required("query").asText();
+                        String rewritten = RuleQueryRewrite.resolve(original, question, previousQuestion);
+                        if (!rewritten.equals(original)) input = mapper.writeValueAsString(arguments.put("query", rewritten));
+                    }
                     run.toolCalls++;
                     var result = delegate.call(input, context);
                     if (result.getBytes(StandardCharsets.UTF_8).length > MAX_TOOL_RESULT_BYTES) {
@@ -398,7 +411,7 @@ public class TradeAgentService {
         };
     }
 
-    private void validateArguments(String input, ToolDefinition definition) {
+    private ObjectNode validateArguments(String input, ToolDefinition definition) {
         // 模型输出是外部输入；按实际工具Schema拒绝缺字段、额外身份字段及隐式类型转换。
         if (input.getBytes(StandardCharsets.UTF_8).length > MAX_TOOL_ARGUMENT_BYTES) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "工具参数超出助手额度");
@@ -432,6 +445,7 @@ public class TradeAgentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工具参数类型不匹配");
             }
         }
+        return (ObjectNode) arguments;
     }
 
     private static final class RunState {

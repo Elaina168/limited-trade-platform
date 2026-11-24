@@ -14,7 +14,7 @@ class RuleRetrievalEvaluationTest {
     @Test void reportFixedCalibrationAndHeldOutQueriesUsingRealVectors() throws Exception {
         var mapper = new ObjectMapper();
         var settings = new RagProperties(true, Path.of("tools/models/bge-small-zh-v1.5"),
-                Path.of("tools/rag-evaluation/rules.json"), 320, 3, 0, false);
+                Path.of("tools/rag-evaluation/rules.json"), 320, 3, 0, false, RagProperties.RetrievalMode.VECTOR, false, false);
         var rows = new ArrayList<com.fasterxml.jackson.databind.JsonNode>();
         try (var model = new BgeEmbeddingModel(settings.modelDirectory())) {
             var knowledge = new RuleKnowledgeBase(model, settings, mapper);

@@ -103,14 +103,14 @@ class ApplicationLoggingIntegrationTest {
         var response = mvc.perform(get("/api/ping")).andExpect(status().isOk()).andReturn().getResponse();
         String trace = response.getHeader("X-Trace-Id");
         assertNotNull(trace);
-        var records = Files.readAllLines(Path.of("target/test-logs/application-logging.log"));
+        var root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        var file = (ch.qos.logback.core.rolling.RollingFileAppender<?>) root.getAppender("FILE");
+        var records = Files.readAllLines(Path.of(file.getFile()));
         var record = records.stream().filter(line -> line.contains(trace)).map(line -> {
             try { return json.readTree(line); } catch (Exception e) { throw new AssertionError(e); }
         }).filter(node -> trace.equals(node.path("traceId").asText()) && "http_request".equals(node.path("event").asText())).findFirst().orElseThrow();
         assertEquals(200, record.path("status").asInt());
         assertEquals("/api/ping", record.path("route").asText());
-        var root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        var file = (ch.qos.logback.core.rolling.RollingFileAppender<?>) root.getAppender("FILE");
         var policy = (ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy<?>) file.getRollingPolicy();
         assertEquals(7, policy.getMaxHistory());
         assertTrue(policy.getFileNamePattern().endsWith(".gz"));

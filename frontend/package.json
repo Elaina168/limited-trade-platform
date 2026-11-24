@@ -12,7 +12,8 @@
     "test": "node --test tests/*.test.ts",
     "acceptance": "node acceptance/run.mjs",
     "benchmark": "node acceptance/run.mjs --benchmark",
-    "benchmark:pagination": "node acceptance/run.mjs --mysql-pagination"
+    "benchmark:pagination": "node acceptance/run.mjs --mysql-pagination",
+    "acceptance:catalog-scale": "node acceptance/run.mjs --catalog-scale"
   },
   "dependencies": {
     "element-plus": "2.14.8",

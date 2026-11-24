@@ -1,0 +1,10 @@
+[
+  {"id":"rw-01","previous":"平台模拟支付超过截止时间怎么办？","question":"那还有效吗？","query":"还有效吗","term":"模拟支付","evidence":{"payment":"已经到达截止时刻也不能付款"}},
+  {"id":"rw-02","previous":"规则里的重复取消是什么情况？","question":"它会再执行一次吗？","query":"会再执行一次吗","term":"重复取消","evidence":{"cancellation":"不会再次归还库存"}},
+  {"id":"rw-03","previous":"请讲一讲超时关单。","question":"这种情况会重复处理吗？","query":"重复处理","term":"超时关单","evidence":{"timeout":"不会重复回补库存"}},
+  {"id":"rw-04","previous":"买家确认收货的规则是什么？","question":"那会再执行一次吗？","query":"会再执行一次吗","term":"确认收货","evidence":{"fulfillment":"不覆盖原收货时间"}},
+  {"id":"rw-05","previous":"请分别解释模拟支付和确认收货。","question":"那会怎样？","query":"会怎样","term":null,"evidence":{}},
+  {"id":"rw-06","previous":"主动取消有哪些要求？","question":"那平台支持信用卡分期吗？","query":"信用卡分期","term":null,"evidence":{}},
+  {"id":"rw-07","previous":"请核对订单编号9301的支付截止时间。","question":"那还有效吗？","query":"还有效吗","term":null,"evidence":{}},
+  {"id":"rw-08","previous":"","question":"它还适用吗？","query":"还适用吗","term":null,"evidence":{}}
+]

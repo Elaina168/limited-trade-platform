@@ -18,10 +18,10 @@
 
 ## 启用
 
-本轮已在本机开发库执行 015。补强 10 新增 016，已在隔离 MySQL 验证。已有数据库在启用本阶段预算前执行一次 016，新容器初始化清单包含该脚本。
+本机开发库已执行 015，并于 2026-11-24 应用 016。现场验证三张预算表、锁定行、外键和预留事务回滚，未留下测试账本记录。其他已有数据库启用预算前执行一次 016，新容器初始化清单包含该脚本。
 
 ## 验证
 
 - 隔离 MySQL、Java HTTP 模型替身共覆盖 54 项不同专项用例。并发只够一次费用预留时两个账本实例中只有一方成功。重复结算保持一次费用，重启后过期提问释放并发但保留未知预留。工具循环的第一次调用按实结算，第二次超时返回 504，保留未知金额且上游仅收到两次请求。
 - Vue 通过类型检查、构建和 43 项测试。实际 Edge、Nginx、Java 与本地模型验收使用 0.08 元夹具，14 Token 结算 52 微元，SSE 取消且无 usage 时继续占预留。第三次请求在出站前收到 429，模型替身只收到两次请求。流式入口若已建立 SSE，额度错误通过 error 事件的 code 返回。
-- 日志见 `tools/strengthening-10-tests.log`、`tools/strengthening-10-ledger.log`、`tools/strengthening-10-vue-tests.log`、`tools/strengthening-10-browser.log`。旧会话的 015 迁移已在开发库验证。没有发起真实付费请求，016 仅用于隔离验收。
+- 日志见 `tools/strengthening-10-tests.log`、`tools/strengthening-10-ledger.log`、`tools/strengthening-10-vue-tests.log`、`tools/strengthening-10-browser.log`。补强 10 的测试未发起真实付费请求。016 先完成隔离验收，本机开发库迁移记录见 `tools/strengthening-016-dev-migration.log`。

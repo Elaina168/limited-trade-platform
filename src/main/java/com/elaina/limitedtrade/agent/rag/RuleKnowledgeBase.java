@@ -26,7 +26,9 @@ import org.springframework.web.server.ResponseStatusException;
 import com.elaina.limitedtrade.agent.TradeAgentTools;
 
 public class RuleKnowledgeBase {
+    private static final int FUSION_CANDIDATES = 5;
     private final SimpleVectorStore store;
+    private final RuleRanking ranking;
     private final RagProperties properties;
     private final List<RuleChunk> chunks;
     private final Map<String, RuleChunk> byId;
@@ -41,6 +43,12 @@ public class RuleKnowledgeBase {
         for (var resource : resources) loaded.addAll(RuleDocuments.split("knowledge/" + resource.getFilename(), resource, properties.chunkChars()));
         chunks = List.copyOf(loaded);
         byId = chunks.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(RuleChunk::id, chunk -> chunk));
+        ranking = properties.retrievalMode() == RagProperties.RetrievalMode.VECTOR ? null : new RuleRanking(chunks);
+        if (properties.retrievalMode() == RagProperties.RetrievalMode.KEYWORD) {
+            fingerprint = digest("rules-keyword-v1:" + properties.chunkChars() + ":" + mapper.writeValueAsString(chunks));
+            store = null;
+            return;
+        }
         fingerprint = digest("rules-v1:" + properties.chunkChars() + ":" + model.fingerprint() + ":" + mapper.writeValueAsString(chunks));
         store = SimpleVectorStore.builder(model).build();
         var index = properties.indexFile().toAbsolutePath();
@@ -81,20 +89,32 @@ public class RuleKnowledgeBase {
     public int chunkCount() { return chunks.size(); }
     public String fingerprint() { return fingerprint; }
 
-    @Tool(name = "search_trade_rules", description = "按自然语言检索公开的平台交易规则，返回原文片段、标题、行号和相似度。仅这些片段可作为规则回答依据；NO_EVIDENCE表示没有可靠命中，必须说明无法确定，不能编造政策。具体订单事实仍需查询本人订单工具。", resultConverter = TradeAgentTools.JsonResultConverter.class)
+    @Tool(name = "search_trade_rules", description = "按自然语言检索公开的平台交易规则，返回原文片段、标题、行号和检索分数。仅这些片段可作为规则回答依据；NO_EVIDENCE表示没有可靠命中，必须说明无法确定，不能编造政策。具体订单事实仍需查询本人订单工具。", resultConverter = TradeAgentTools.JsonResultConverter.class)
     public SearchResult search(@ToolParam(description = "明确的规则问题或检索主题，1到400字符，不传用户ID或订单私密数据") String query) {
         if (query == null || query.isBlank() || query.length() > 400) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "规则检索问题不能为空且最多400字符");
         }
-        // 查询添加BGE推荐指令；入库文档保持原文，不添加查询指令。
-        var hits = store.similaritySearch(SearchRequest.builder().query(BgeEmbeddingModel.QUERY_PREFIX + query)
-                .topK(properties.topK()).similarityThreshold(properties.similarityThreshold()).build());
-        var result = hits.stream().map(hit -> {
-            var original = byId.get(hit.getId());
-            return new RuleChunk(original.id(), original.documentId(), original.title(), original.path(),
-                    original.startLine(), original.endLine(), original.text(), hit.getScore());
-        }).toList();
+        int limit = properties.rerankEnabled() ? FUSION_CANDIDATES : properties.topK();
+        var candidates = candidates(query, limit);
+        var result = properties.rerankEnabled()
+                ? RuleReranker.rank(query, candidates, properties.topK()) : candidates;
         return new SearchResult(result.isEmpty() ? "NO_EVIDENCE" : "MATCHED", result);
+    }
+
+    List<RuleChunk> candidates(String query, int limit) {
+        return switch (properties.retrievalMode()) {
+            case VECTOR -> vector(query, limit);
+            case KEYWORD -> ranking.keyword(query, limit);
+            case HYBRID -> RuleRanking.fuse(vector(query, FUSION_CANDIDATES),
+                    ranking.keyword(query, FUSION_CANDIDATES), limit);
+        };
+    }
+
+    private List<RuleChunk> vector(String query, int limit) {
+        // 查询添加 BGE 推荐指令，入库文档保持原文。
+        return store.similaritySearch(SearchRequest.builder().query(BgeEmbeddingModel.QUERY_PREFIX + query)
+                        .topK(limit).similarityThreshold(properties.similarityThreshold()).build()).stream()
+                .map(hit -> byId.get(hit.getId()).withScore(hit.getScore())).toList();
     }
 
     private static String digest(String value) {

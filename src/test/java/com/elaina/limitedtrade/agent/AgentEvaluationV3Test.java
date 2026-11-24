@@ -35,7 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnabledIfSystemProperty(named = "agent.evaluation.v3", matches = "local|live")
 @SpringBootTest(properties = {"app.agent.enabled=true", "app.agent.rag.enabled=true",
         "app.agent.model=deepseek-flash", "app.agent.rag.chunk-chars=320", "app.agent.rag.top-k=3",
-        "app.agent.rag.similarity-threshold=0.55",
+        "app.agent.rag.similarity-threshold=0.55", "app.agent.rag.retrieval-mode=vector",
+        "app.agent.rag.rerank-enabled=false", "app.agent.rag.query-rewrite-enabled=false",
         "app.agent.budget.enabled=true", "app.agent.budget.monthly-yuan=2",
         "app.agent.budget.daily-questions-per-user=50"})
 @ActiveProfiles("test")
@@ -182,6 +183,8 @@ class AgentEvaluationV3Test {
                     "holdout", EvaluationIdentity.digest(holdout), "localScripts", EvaluationIdentity.digest(fixtures)));
             report.put("corpusFingerprint", knowledge.fingerprint());
             report.put("configuration", Map.of("transport", "stream", "chunkChars", properties.rag().chunkChars(),
+                    "retrievalMode", properties.rag().retrievalMode(),
+                    "rerankEnabled", properties.rag().rerankEnabled(), "queryRewriteEnabled", properties.rag().queryRewriteEnabled(),
                     "topK", properties.rag().topK(), "threshold", properties.rag().similarityThreshold(),
                     "maxOutputTokens", properties.maxOutputTokens(), "monthlyYuan", properties.budget().monthlyYuan()));
             report.put("source", Map.of("agent", EvaluationIdentity.source("src/main/java/com/elaina/limitedtrade/agent/TradeAgentService.java"),

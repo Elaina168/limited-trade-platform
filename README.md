@@ -100,6 +100,7 @@ SOURCE sql/014_agent_conversation.sql;
 SOURCE sql/015_agent_conversation_visible_history.sql;
 SOURCE sql/016_agent_usage_budget.sql;
 SOURCE sql/seed.sql;
+SOURCE sql/demo_catalog_scale.sql;
 
 USE limited_trade_platform_test;
 SOURCE sql/schema.sql;
@@ -124,7 +125,7 @@ SOURCE sql/016_agent_usage_budget.sql;
 
 本机已生成 `learning_admin` 和 `learning_user` 两个学习账号，随机密码只保存在被 Git 忽略的 `config/local-accounts.txt`。该文件不进入 JAR 或 Git。新环境的账号初始化与登录操作见 [登录与权限学习记录](docs/learning/04-security.md)，不能假设其他机器存在这些本机账号。
 
-需要更多页面演示内容时，在完成全部结构迁移后，可通过 MySQL 客户端执行 `SOURCE sql/demo_catalog.sql;`。该脚本只写开发库，追加4个分类、8个在售商品、3个活动和3种活动满减券，名称均以“演示·”开头；首次执行时活动和券从当前时间起有效30天，重复执行不覆盖现有记录、不补库存和名额、不延长有效期。本机已执行，无需再次导入；在活动详情领券后，即可选择本人优惠券下单。
+商城开发库和新 Compose 数据卷默认包含扩展演示目录。新增 12 个分类、720 件在售商品、120 个限量活动和 240 种活动满减券。已有商城库在应用结构迁移后可选中目标库执行 `SOURCE sql/demo_catalog_scale.sql;`。脚本只追加缺失的扩展记录，重复导入保留库存、名额和活动时间。 [规模测试说明](docs/learning/60-catalog-scale-and-regression.md)
 
 准备好配置与数据库后，在 PowerShell 中从项目根目录执行：
 
@@ -627,3 +628,11 @@ Agent 增加业务角色准入、服务端工具身份上下文、调用与结�
 ## 2026-11-23 补强 12
 
 检索新增三组固定配置和独立留出题。Agent 新版完整评测区分脚本化本地与显式真实上游。逐题报告、指标和入口见[补强 12 记录](docs/learning/57-strengthening-evaluation-baselines.md)。
+
+## 2026-11-24 补强 13
+
+公开规则检索支持向量、关键词及 RRF 混合模式。固定留出比较后仍默认使用向量。配置、算法和结果见[补强 13 记录](docs/learning/58-strengthening-hybrid-retrieval.md)。
+
+## 2026-11-24 补强 14
+
+规则检索新增默认关闭的本地重排序和按需规则查询改写。固定对照结果与向量存储选型见[补强 14 记录](docs/learning/59-strengthening-retrieval-experiments.md)。
