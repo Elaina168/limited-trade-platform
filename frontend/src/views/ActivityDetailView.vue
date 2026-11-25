@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth.ts'
 import { activity, activityCoupons, products, myCoupons, claimCoupon } from '../api/catalog.ts'
 import { errorMessage, SessionChangedError } from '../api/http.ts'
 import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
+import { activityStatus, beijingTimestamp, formatActivityTime } from '../utils/activity-time.ts'
 import type { Activity, ActivityCoupon, Product, UserCoupon } from '../types/catalog.ts'
 
 const route = useRoute()
@@ -20,16 +21,11 @@ const notice = ref('')
 const now = ref(Date.now())
 const timer = window.setInterval(() => { now.value = Date.now() }, 1000)
 let sequence = 0
-const phase = computed(() => {
-  if (!detail.value) return ''
-  if (now.value < new Date(detail.value.startsAt).getTime()) return '即将开始'
-  if (now.value >= new Date(detail.value.endsAt).getTime()) return '已结束'
-  return detail.value.remainingQuantity > 0 ? '进行中' : '名额已用完'
-})
+const phase = computed(() => detail.value ? activityStatus(detail.value, now.value) : '')
 function claimLabel(coupon: ActivityCoupon) {
   if (owned.value.some(item => item.coupon.id === coupon.id)) return '已领取'
-  if (now.value < new Date(coupon.claimStartsAt).getTime()) return '尚未开领'
-  if (now.value >= new Date(coupon.claimEndsAt).getTime()) return '领取已结束'
+  if (now.value < beijingTimestamp(coupon.claimStartsAt)) return '尚未开领'
+  if (now.value >= beijingTimestamp(coupon.claimEndsAt)) return '领取已结束'
   return coupon.remainingQuantity > 0 ? '领取优惠券' : '已领完'
 }
 async function load() {
@@ -105,7 +101,7 @@ onUnmounted(() => { sequence++; window.clearInterval(timer) })
       <h2>{{ product?.name ?? '商品暂不可展示' }}</h2>
       <p v-if="product" class="price">¥{{ Number(product.price).toFixed(2) }}</p>
       <p>活动剩余 {{ detail.remainingQuantity }} / {{ detail.totalQuantity }} 份</p>
-      <p class="muted">{{ detail.startsAt.replace('T', ' ') }} 至 {{ detail.endsAt.replace('T', ' ') }}</p>
+      <p class="muted">北京时间 {{ formatActivityTime(detail.startsAt) }} 至 {{ formatActivityTime(detail.endsAt) }}</p>
       <RouterLink v-if="product && phase === '进行中'" class="button-link" :to="`/purchase/${product.id}?activityId=${detail.id}`">参加活动下单</RouterLink>
     </section>
     <div class="section-heading"><h2>活动优惠券</h2><el-button :disabled="claiming !== null" @click="load">刷新活动</el-button></div>
@@ -116,10 +112,11 @@ onUnmounted(() => { sequence++; window.clearInterval(timer) })
         <h2>{{ coupon.name }}</h2>
         <p class="price">满 {{ coupon.thresholdAmount }} 减 {{ coupon.discountAmount }}</p>
         <p class="muted">剩余 {{ coupon.remainingQuantity }} 张</p>
-        <p class="muted">领取：{{ coupon.claimStartsAt.replace('T', ' ') }} 至 {{ coupon.claimEndsAt.replace('T', ' ') }}</p>
-        <p class="muted">使用：{{ coupon.useStartsAt.replace('T', ' ') }} 至 {{ coupon.useEndsAt.replace('T', ' ') }}</p>
-        <RouterLink v-if="!auth.user" class="button-link" to="/login">登录后领取</RouterLink>
-        <el-button v-else type="primary" :disabled="claimLabel(coupon) !== '领取优惠券' || claiming !== null || auth.busy" :loading="claiming === coupon.id" @click="claim(coupon)">{{ claimLabel(coupon) }}</el-button>
+        <p class="muted">领取：{{ formatActivityTime(coupon.claimStartsAt) }} 至 {{ formatActivityTime(coupon.claimEndsAt) }}</p>
+        <p class="muted">使用：{{ formatActivityTime(coupon.useStartsAt) }} 至 {{ formatActivityTime(coupon.useEndsAt) }}</p>
+        <RouterLink v-if="!auth.user && claimLabel(coupon) === '领取优惠券'" class="button-link" to="/login">登录后领取</RouterLink>
+        <el-button v-else-if="auth.user" type="primary" :disabled="claimLabel(coupon) !== '领取优惠券' || claiming !== null || auth.busy" :loading="claiming === coupon.id" @click="claim(coupon)">{{ claimLabel(coupon) }}</el-button>
+        <p v-else class="muted">{{ claimLabel(coupon) }}</p>
       </article>
     </div>
   </template>

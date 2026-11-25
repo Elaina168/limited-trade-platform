@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { useAuthStore } from '../stores/auth.ts'
 import { addresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from '../api/checkout.ts'
 import { errorMessage, SessionChangedError } from '../api/http.ts'
@@ -34,7 +36,7 @@ async function load() {
   catch (cause) { if (current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
   finally { if (current === sequence) busy.value = false }
 }
-async function mutate(action: () => Promise<unknown>, matches: (data: Address[]) => boolean, message: string, clearForm = false, observed = message) {
+async function mutate(action: () => Promise<unknown>, matches: (data: Address[]) => boolean, message: string, clearForm = false, observed = message, showPopup = false) {
   if (busy.value || saving.value || auth.busy) return
   const current = ++operation
   saving.value = true
@@ -44,8 +46,10 @@ async function mutate(action: () => Promise<unknown>, matches: (data: Address[])
     await action()
     if (current !== operation) return
     if (clearForm) reset()
-    notice.value = message
     await load()
+    if (current !== operation) return
+    if (showPopup) ElMessage.success(message)
+    else notice.value = message
   } catch (cause) {
     if (current !== operation || cause instanceof SessionChangedError) return
     if (!canReconcileWrite(cause)) { error.value = errorMessage(cause); return }
@@ -54,8 +58,13 @@ async function mutate(action: () => Promise<unknown>, matches: (data: Address[])
     if (current !== operation) return
     if (result?.snapshot) list.value = result.snapshot
     if (result?.confirmed && clearForm) reset()
-    notice.value = !result ? '' : result.confirmed ? observed : result.snapshot
-      ? '已更新地址簿，暂未确认本次修改。' : '暂时无法核对地址簿。'
+    if (result?.confirmed && showPopup) {
+      notice.value = ''
+      ElMessage.success(observed)
+    } else {
+      notice.value = !result ? '' : result.confirmed ? observed : result.snapshot
+        ? '已更新地址簿，暂未确认本次修改。' : '暂时无法核对地址簿。'
+    }
   } finally { if (current === operation) saving.value = false }
 }
 function save() {
@@ -72,7 +81,7 @@ function save() {
     () => id === null ? createAddress(data) : updateAddress(id, data),
     snapshot => snapshot.some(item => (id === null ? previousIds !== null && !previousIds.has(item.id) : item.id === id)
       && (Object.keys(data) as (keyof AddressInput)[]).every(key => item[key] === data[key])),
-    '地址已保存。', true, id === null ? '已在地址簿中查到一条匹配的新地址。' : '地址已保存。',
+    '地址已保存。', true, id === null ? '已在地址簿中查到一条匹配的新地址。' : '地址已保存。', true,
   )
 }
 function remove(item: Address) {
@@ -89,10 +98,10 @@ onUnmounted(() => { sequence++; operation++ })
 
 <template>
   <p class="section-kicker">DELIVERY ADDRESS</p><h1 class="page-title">收货地址</h1>
-  <p class="page-description">管理本人地址，订单创建时保存地址快照。</p>
+  <p class="page-description">管理收货地址和默认地址。</p>
   <p v-if="error" class="form-error" role="alert">{{ error }}</p>
   <p v-if="notice" class="operation-notice" role="status">{{ notice }}</p>
-  <div class="section-heading"><h2>我的地址</h2><el-button :disabled="saving || auth.busy" @click="load">刷新地址</el-button></div>
+  <div class="section-heading"><h2>我的地址</h2></div>
   <p v-if="busy" role="status">正在加载地址…</p>
   <p v-else-if="!list.length && !error" class="empty-state">还没有收货地址，请在下方添加。</p>
   <div class="market-grid">

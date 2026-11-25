@@ -22,7 +22,7 @@ function save() {
 }
 </script>
 <template>
-  <h1 class="page-title">活动管理</h1><p class="page-description">为已有商品创建限时限量活动，名额不预留商品库存。</p>
+  <h1 class="page-title">活动管理</h1><p class="page-description">为已有商品创建限时限量活动。活动时间按北京时间填写。</p>
   <p v-if="error" class="form-error" role="alert">{{ error }}</p><p v-if="notice" class="operation-notice" role="status">{{ notice }}</p>
   <el-button :loading="busy" :disabled="saving" @click="load">刷新活动</el-button>
   <section class="market-card address-editor"><h2>新增活动</h2><form @submit.prevent="save" novalidate>

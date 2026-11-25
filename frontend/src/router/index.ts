@@ -29,6 +29,7 @@ export const router = createRouter({
         { path: 'purchase/:productId', name: 'purchase', component: () => import('../views/PurchaseView.vue'), meta: { title: '选购商品', requiresAuth: true } },
         { path: 'checkout/result/:id', name: 'order-created', component: () => import('../views/OrderCreatedView.vue'), meta: { title: '下单结果', requiresAuth: true } },
         { path: 'products', name: 'products', component: () => import('../views/ProductsView.vue'), meta: { title: '商品浏览' } },
+        { path: 'products/:productId', name: 'product-detail', component: () => import('../views/ProductDetailView.vue'), meta: { title: '商品详情' } },
         { path: 'activities', name: 'activities', component: () => import('../views/ActivitiesView.vue'), meta: { title: '限量活动' } },
         { path: 'activities/:id', name: 'activity-detail', component: () => import('../views/ActivityDetailView.vue'), meta: { title: '活动详情' } },
         { path: '', name: 'home', component: () => import('../views/HomeView.vue'), meta: { title: '账号概览', requiresAuth: true } },
@@ -47,7 +48,7 @@ router.beforeEach(async to => {
   if (auth.status === 'failed') return { name: 'unavailable', query: { returnTo: to.fullPath } }
   if (to.meta.requiresAuth && !auth.user) return { name: 'login' }
   if (to.meta.requiresAdmin && !auth.isAdmin) return { name: 'forbidden' }
-  if ((to.name === 'login' || to.name === 'register') && auth.user) return { name: auth.isAdmin ? 'admin' : 'home' }
+  if ((to.name === 'login' || to.name === 'register') && auth.user) return { name: auth.isAdmin ? 'admin' : 'products' }
   return true
 })
 

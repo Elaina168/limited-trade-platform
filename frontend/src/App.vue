@@ -10,7 +10,7 @@ const router = useRouter()
 watch(() => auth.status, status => {
   if (status === 'anonymous' && route.meta.requiresAuth) void router.replace({ name: 'login' })
   if (status === 'authenticated') {
-    if (route.name === 'login' || route.name === 'register') void router.replace({ name: auth.isAdmin ? 'admin' : 'home' })
+    if (route.name === 'login' || route.name === 'register') void router.replace({ name: auth.isAdmin ? 'admin' : 'products' })
     else if (route.meta.requiresAdmin && !auth.isAdmin) void router.replace({ name: 'forbidden' })
   }
 })

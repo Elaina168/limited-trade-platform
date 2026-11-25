@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { useAuthStore } from '../stores/auth.ts'
 import { useCheckoutStore } from '../stores/checkout.ts'
 import { addresses, cartItems, removeCartItem, setCartQuantity } from '../api/checkout.ts'
@@ -60,7 +62,8 @@ async function update(item: CartItem, remove = false) {
     if (remove) await removeCartItem(item.productId)
     else await setCartQuantity(item.productId, quantity)
     if (current !== operation) return
-    notice.value = success
+    if (remove) notice.value = success
+    else ElMessage.success(success)
     await load()
   } catch (cause) {
     if (current !== operation || cause instanceof SessionChangedError) return
@@ -72,6 +75,11 @@ async function update(item: CartItem, remove = false) {
     }, () => current === operation)
     if (current !== operation) return
     if (result?.snapshot) applyCart(result.snapshot)
+    if (result?.confirmed && !remove) {
+      notice.value = ''
+      ElMessage.success(success)
+      return
+    }
     notice.value = !result ? '' : result.confirmed ? success : result.snapshot
       ? '已更新购物车，暂未确认本次修改。' : '暂时无法核对购物车状态。'
   }
@@ -97,7 +105,7 @@ onUnmounted(() => { sequence++; operation++ })
 
 <template>
   <p class="section-kicker">SHOPPING CART</p><h1 class="page-title">购物车</h1>
-  <p class="page-description">数量保存到购物车后生效；结算时按服务端最新库存与价格计算。</p>
+  <p class="page-description">调整数量并选择要结算的商品。</p>
   <p v-if="error" class="form-error" role="alert">{{ error }}</p><p v-if="notice" class="operation-notice" role="status">{{ notice }}</p>
   <el-button :disabled="saving || auth.busy || checkout.busy" @click="load">刷新购物车</el-button>
   <p v-if="busy" role="status">正在加载购物车…</p>
@@ -105,17 +113,17 @@ onUnmounted(() => { sequence++; operation++ })
     <p v-if="!items.length && !error" class="empty-state">购物车还是空的，<RouterLink class="text-link" to="/products">去选购商品</RouterLink>。</p>
     <article v-for="item in items" :key="item.productId" class="market-card cart-row">
       <input v-model="selected" type="checkbox" :value="item.productId" :aria-label="`选择${item.name}`" :disabled="blocked || item.status !== 'ON_SALE' || item.stock < item.quantity" />
-      <div class="cart-item-info"><h2>{{ item.name }}</h2><p class="muted">¥{{ Number(item.price).toFixed(2) }} · 库存 {{ item.stock }} · {{ item.status === 'ON_SALE' ? '在售' : '已下架' }}</p></div>
+      <div class="cart-item-info"><h2>{{ item.name }}</h2><p class="muted">¥{{ Number(item.price).toFixed(2) }} · {{ item.status !== 'ON_SALE' ? '已下架' : item.stock < item.quantity ? '当前数量不可购买' : '在售' }}</p></div>
       <input v-model.number="quantities[item.productId]" class="quantity-input" type="number" min="1" max="2147483647" step="1" :aria-label="`${item.name}数量`" :disabled="blocked || item.status !== 'ON_SALE'" />
       <div class="business-actions"><el-button :disabled="blocked || item.status !== 'ON_SALE'" @click="update(item)">保存数量</el-button><el-button :disabled="blocked" @click="update(item, true)">移除</el-button></div>
     </article>
     <section v-if="items.length" class="market-card checkout-summary">
-      <label for="cart-address">收货地址</label>
-      <select id="cart-address" v-model="addressId" :disabled="blocked"><option value="">请选择地址</option><option v-for="item in addressList" :key="item.id" :value="String(item.id)">{{ item.defaultAddress ? '默认 · ' : '' }}{{ item.recipientName }} {{ item.province }} {{ item.city }} {{ item.district }} {{ item.detailAddress }}</option></select>
-      <RouterLink class="text-link" to="/addresses">管理收货地址</RouterLink>
-      <p v-if="!addressList.length" class="muted">请先添加收货地址。</p>
+      <template v-if="addressList.length">
+        <label for="cart-address">收货地址</label>
+        <select id="cart-address" v-model="addressId" :disabled="blocked"><option v-for="item in addressList" :key="item.id" :value="String(item.id)">{{ item.defaultAddress ? '默认 · ' : '' }}{{ item.recipientName }} {{ item.province }} {{ item.city }} {{ item.district }} {{ item.detailAddress }}</option></select>
+      </template>
+      <RouterLink v-else class="text-link" to="/addresses">请先添加收货地址</RouterLink>
       <p>已选 {{ selected.length }} 种商品 · 预估 ¥{{ estimate.toFixed(2) }}</p>
-      <p class="muted">购物车结算不使用活动券；活动优惠券请通过活动详情单独下单。最终金额以订单结果为准。</p>
       <p v-if="unsaved" class="form-error">所选商品有未保存的数量，请先保存。</p>
       <el-button type="primary" :loading="checkout.busy" :disabled="blocked || !selected.length || !addressId || unsaved" @click="submit">提交购物车订单</el-button>
     </section>

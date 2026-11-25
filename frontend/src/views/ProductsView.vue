@@ -59,14 +59,14 @@ onUnmounted(() => { sequence++ })
     <p class="muted">共 {{ result.total }} 件商品</p>
     <p v-if="!result.items.length" class="empty-state">没有找到符合条件的商品，试试其他名称或分类。</p>
     <div class="market-grid">
-      <article v-for="item in result.items" :key="item.id" class="market-card">
+      <RouterLink v-for="item in result.items" :key="item.id" class="market-card product-card-link"
+        :to="{ name: 'product-detail', params: { productId: item.id } }" :aria-label="item.name">
         <div class="product-mark" aria-hidden="true">{{ item.name.slice(0, 1) }}</div>
         <p class="section-kicker">{{ item.categoryName ?? '未分类' }}</p>
         <h2>{{ item.name }}</h2>
         <p class="price">¥{{ Number(item.price).toFixed(2) }}</p>
-        <p class="muted">{{ item.stock > 0 ? `库存 ${item.stock}` : '暂时售罄' }}</p>
-        <RouterLink class="text-link" :to="`/purchase/${item.id}`">选购 / 保存到购物车 →</RouterLink>
-      </article>
+        <p v-if="item.stock === 0" class="muted">暂时售罄</p>
+      </RouterLink>
     </div>
     <nav class="pagination" aria-label="商品分页">
       <el-button :disabled="page <= 1" @click="changePage(-1)">上一页</el-button>
