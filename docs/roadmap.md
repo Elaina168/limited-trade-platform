@@ -1,5 +1,11 @@
 # 后续学习与工程化路线
 
+## 当前交付与剩余工作（2026-11-26）
+
+- 商城与交易助手的本机启动、定向验证和人工检查路线见 [项目首页](../README.md) 与 [人工验收](manual-acceptance.md)。此前各阶段的证据和限制集中在 [开发历史](project-history.md)。
+- 补强 3 保留五服务配置、隔离脚本和手动 CI，待实际运行并验收启动、交易与重建持久化。 [Compose 进度](learning/48-strengthening-compose.md#验收进度)
+- 补强 15 等选定演示环境后实施，需有一次可复核的发布和回滚、告警验证与约定观察期。 [正式计划](superpowers/plans/2026-11-23-project-strengthening.md#补强15版本关联发布回滚告警与持续运行)
+
 ## 最新补强安排（2026-11-23）
 
 Vue七阶段本机交付已完成。用户随后确认继续补强当前Java交易项目，范围与历史安排冲突时，以[当前补强范围](plans/2026-11-23-strengthening-scope.md)和[15阶段补强计划](superpowers/plans/2026-11-23-project-strengthening.md)为准。
