@@ -38,6 +38,23 @@ public class ProductService {
         return productMapper.findAllProducts();
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminProductPage pageAdminProducts(int page, int size, String keyword, Long categoryId, String status) {
+        String literalKeyword = literalSearchKeyword(keyword);
+        long offset = (long) (page - 1) * size;
+        long total = productMapper.countAdminProducts(categoryId, literalKeyword, status);
+        List<Product> items = productMapper.pageAdminProducts(categoryId, literalKeyword, status, offset, size);
+        return new AdminProductPage(page, size, total, items);
+    }
+
+    public Product getAdminProduct(long id) {
+        Product product = productMapper.findById(id);
+        if (product == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在");
+        }
+        return product;
+    }
+
     @Transactional
     public Product createProduct(CreateProductRequest request) {
         if (request.categoryId() != null && categoryMapper.findById(request.categoryId()) == null) {
@@ -72,12 +89,16 @@ public class ProductService {
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ProductSearchPage searchProducts(int page, int size, Long categoryId, String keyword) {
-        // 搜索词按普通文本匹配；先转义转义符自身，再处理LIKE通配符。
-        String literalKeyword = keyword == null || keyword.isBlank() ? null
-                : keyword.strip().replace("!", "!!").replace("%", "!%").replace("_", "!_");
+        String literalKeyword = literalSearchKeyword(keyword);
         long offset = (long) (page - 1) * size;
         long total = productMapper.countSearchProducts(categoryId, literalKeyword);
         List<ProductSearchItem> items = productMapper.searchProducts(categoryId, literalKeyword, offset, size);
         return new ProductSearchPage(page, size, total, items);
+    }
+
+    private String literalSearchKeyword(String keyword) {
+        // 搜索词按普通文本匹配，先转义转义符自身，再处理 LIKE 通配符。
+        return keyword == null || keyword.isBlank() ? null
+                : keyword.strip().replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 }

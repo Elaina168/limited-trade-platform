@@ -26,7 +26,7 @@ function save() {
   <p v-if="error" class="form-error" role="alert">{{ error }}</p><p v-if="notice" class="operation-notice" role="status">{{ notice }}</p>
   <el-button :loading="busy" :disabled="saving" @click="load">刷新分类</el-button>
   <section class="market-card address-editor"><h2>{{ editing === null ? '新增分类' : '重命名分类' }}</h2>
-    <form @submit.prevent="save" novalidate><div class="field"><label for="category-name">分类名称</label><input id="category-name" v-model="name" class="admin-input" maxlength="50" :disabled="blocked" /></div>
+    <form @submit.prevent="save" novalidate><div class="field"><label for="category-name">分类名称</label><el-input id="category-name" v-model="name" class="admin-input" maxlength="50" :disabled="blocked" /></div>
       <div class="business-actions"><el-button type="primary" native-type="submit" :disabled="blocked" :loading="saving">保存分类</el-button><el-button v-if="editing !== null" :disabled="blocked" @click="resetDraft">取消编辑</el-button></div>
     </form>
   </section>

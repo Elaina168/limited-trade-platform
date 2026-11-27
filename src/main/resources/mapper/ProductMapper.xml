@@ -53,14 +53,38 @@
         WHERE id = #{id}
     </update>
 
-    <sql id="searchConditions">
-        WHERE p.status = 'ON_SALE'
+    <sql id="nameAndCategoryFilters">
         <if test="categoryId != null">
             AND p.category_id = #{categoryId}
         </if>
         <if test="keyword != null">
             AND p.name LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
         </if>
+    </sql>
+
+    <sql id="adminProductConditions">
+        <where>
+            <include refid="nameAndCategoryFilters"/>
+            <if test="status != null and status != ''">
+                AND p.status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <select id="countAdminProducts" resultType="long">
+        SELECT COUNT(*) FROM product p
+        <include refid="adminProductConditions"/>
+    </select>
+
+    <select id="pageAdminProducts" resultType="com.elaina.limitedtrade.product.Product">
+        SELECT p.id, p.name, p.price, p.stock, p.status, p.category_id FROM product p
+        <include refid="adminProductConditions"/>
+        ORDER BY p.id DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <sql id="searchConditions">
+        WHERE p.status = 'ON_SALE'
+        <include refid="nameAndCategoryFilters"/>
     </sql>
 
     <select id="countSearchProducts" resultType="long">

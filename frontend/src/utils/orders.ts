@@ -5,6 +5,13 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
 }
 export const orderActionLabels: Record<OrderAction, string> = { pay: '模拟支付', cancel: '取消订单', receive: '确认收货' }
 
+export function orderPaymentCountdown(order: Order, now: number): string {
+  const remaining = Math.ceil((new Date(order.expiresAt).getTime() - now) / 1000)
+  return remaining > 0
+    ? `支付剩余 ${Math.floor(remaining / 60)}分${remaining % 60}秒`
+    : '已过支付截止时间，正在自动核对订单状态。'
+}
+
 export function availableOrderActions(order: Order, now: number): OrderAction[] {
   if (order.status === 'PENDING_PAYMENT') {
     // 支付截止不代表已关闭；关闭前仍可取消，最终条件由后端事务判断。

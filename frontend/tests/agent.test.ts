@@ -9,7 +9,8 @@ Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value:
 let pinia = createPinia()
 beforeEach(()=>{saved.clear();advanceSession();pinia=createPinia();setActivePinia(pinia)})
 afterEach(()=>{globalThis.fetch=originalFetch;disposePinia(pinia)})
-const result = { answer:'最终回答',queriedAt:'2026-11-22T10:00:00',toolsUsed:['getTradeRules'],sources:[{id:'payment',text:'支付期限',source:'规则'}],knowledgeSources:[{id:'r1',documentId:'rules',title:'交易规则',path:'docs/rules.md',startLine:1,endLine:2,text:'规则正文',score:0.8}],modelCalls:2,toolCalls:1,totalTokens:32,durationMs:100 }
+const orders = [{ id: 81, status: 'PAID', totalAmount: 39.90, expiresAt: '2026-11-22T10:15:00' }]
+const result = { answer:'最终回答',queriedAt:'2026-11-22T10:00:00',toolsUsed:['getTradeRules'],sources:[{id:'payment',text:'支付期限',source:'规则'}],knowledgeSources:[{id:'r1',documentId:'rules',title:'交易规则',path:'docs/rules.md',startLine:1,endLine:2,text:'规则正文',score:0.8}],orders,modelCalls:2,toolCalls:1,totalTokens:32,durationMs:100 }
 const event=(name:string,payload:unknown)=>`event: ${name}\r\ndata: ${JSON.stringify(payload)}\r\n\r\n`
 function body(text:string,bytewise=false){const bytes=new TextEncoder().encode(text);return new ReadableStream<Uint8Array>({start(c){if(bytewise)for(const byte of bytes)c.enqueue(new Uint8Array([byte]));else c.enqueue(bytes);c.close()}})}
 const stream=(text:string)=>new Response(body(text),{headers:{'Content-Type':'text/event-stream;charset=UTF-8'}})
@@ -26,6 +27,12 @@ test('SSE supports multiple data lines and comments',async()=>{
  const {readAgentStream}=await import('../src/utils/agentStream.ts')
  const text=': heartbeat\n'+event('start',{})+'event: delta\ndata: {"round":1,\ndata: "text":"中文"}\n\n'+event('done',result)
  assert.equal((await readAgentStream(body(text),()=>{})).answer,result.answer)
+})
+test('SSE retains server order cards and rejects malformed order summaries', async () => {
+ const {readAgentStream}=await import('../src/utils/agentStream.ts')
+ const prefix=event('start',{})
+ assert.deepEqual((await readAgentStream(body(prefix+event('done',result)),()=>{})).orders,orders)
+ await assert.rejects(readAgentStream(body(prefix+event('done',{...result,orders:[{...orders[0],id:'81'}]})),()=>{}),/订单/)
 })
 test('EOF without done never confirms a partial answer',async()=>{
  const {readAgentStream}=await import('../src/utils/agentStream.ts')
@@ -60,9 +67,9 @@ test('identity change during CSRF prevents stream POST',async()=>{
 })
 async function store(){const {useAgentStore}=await import('../src/stores/agent.ts');const auth=useAuthStore();auth.user={id:61,username:'buyer',role:'USER'};auth.status='authenticated';return{auth,agent:useAgentStore()}}
 const id='11111111-1111-4111-8111-111111111111'
-const conversation = { conversationId:id, expiresAt:'2026-11-23T10:00:00' }
+const conversation = { conversationId:id, expiresAt:'2026-11-23T10:00:00', title:'问题' }
 const history = { ...conversation, generating:false, turns:[{ question:'问题', answer:result.answer,
-  sources:result.sources, knowledgeSources:result.knowledgeSources }] }
+  sources:result.sources, knowledgeSources:result.knowledgeSources, orders }] }
 const conversationPage = { page:1, size:5, hasNext:false, items:[conversation] }
 function mockComplete(text=event('start',{})+event('done',result)) {
  globalThis.fetch=async input=>{
@@ -86,6 +93,8 @@ test('agent applies reset and restores committed history from the server after r
  assert.equal(refreshed.conversationId,id)
  assert.deepEqual(refreshed.messages.map(message=>message.text),['问题',result.answer])
  assert.equal(refreshed.messages[1]!.result!.knowledgeSources.length,1)
+ assert.deepEqual(refreshed.messages[1]!.result!.orders,orders)
+ assert.equal(refreshed.conversations[0]!.title,'问题')
 })
 test('incomplete answer retains draft without sources and is not automatically resent',async()=>{
  let posts=0;mockComplete(event('start',{})+event('delta',{round:1,text:'未完成正文'}));const fetch=globalThis.fetch

@@ -81,12 +81,16 @@ class AgentSseHttpTest {
     }
 
     @Test void realHttpFlushesDeltaBeforeModelCompletesAndDoneFollowsDatabaseCommit() throws Exception {
+        var now = java.time.LocalDateTime.now();
+        var card = new AgentOrderSummary(9301L, "PENDING_PAYMENT", new java.math.BigDecimal("19.90"),
+                now, now.plusMinutes(15), null, null, List.of());
         when(agent.chatTurnStream(eq(userId), eq("问题"), anyList(), any())).thenAnswer(call -> {
             AgentStream stream = call.getArgument(3);
             stream.emit("delta", 1, "第一段\n第二行");
             assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
             stream.emit("delta", 1, "最后段");
-            return new AgentTurn(new AgentChatResponse("第一段\n第二行最后段", java.time.LocalDateTime.now(), List.of(), List.of(), 1, 0, 1L, 1, List.of()),
+            return new AgentTurn(new AgentChatResponse("第一段\n第二行最后段", now, List.of("get_my_order"),
+                    List.of(), 1, 1, 1L, 1, List.of(), List.of(card)),
                     List.of(new UserMessage("问题"), new AssistantMessage("第一段\n第二行最后段")));
         });
         var response = connect();
@@ -103,12 +107,17 @@ class AgentSseHttpTest {
             release.countDown();
             String rest = executor.submit(() -> reader.lines().reduce("", (a,b) -> a + b + "\n")).get(5, TimeUnit.SECONDS);
             assertThat(rest).contains("event:done", "最后段");
+            String done = rest.substring(rest.indexOf("event:done")).lines()
+                    .filter(line -> line.startsWith("data:")).findFirst().orElseThrow().substring("data:".length());
+            var result = json.readTree(done);
             var saved = client.send(HttpRequest.newBuilder(uri("/api/agent/conversations/" + conversation + "/messages"))
                     .GET().build(), HttpResponse.BodyHandlers.ofString());
             assertThat(saved.statusCode()).isEqualTo(200);
             var visible = json.readTree(saved.body()).required("turns").required(0);
             assertThat(visible.required("clientTurnId").asText()).isEqualTo(clientTurnId.toString());
             assertThat(visible.required("answer").asText()).endsWith("最后段");
+            assertThat(result.required("orders").required(0).required("id").asLong()).isEqualTo(9301L);
+            assertThat(visible.required("orders")).isEqualTo(result.required("orders"));
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_conversation_turn WHERE conversation_id=?", Integer.class, conversation)).isEqualTo(1);
         }
     }

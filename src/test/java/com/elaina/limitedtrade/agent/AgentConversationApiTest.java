@@ -48,14 +48,16 @@ class AgentConversationApiTest {
     }
 
     @Test void usesAuthenticatedOwnerAndExposesCreateSendClear() throws Exception {
-        when(service.create(7301)).thenReturn(new AgentConversationService.CreatedConversation(id, LocalDateTime.now().plusHours(24)));
+        when(service.create(7301)).thenReturn(new AgentConversationService.CreatedConversation(id, LocalDateTime.now().plusHours(24), "新对话"));
         when(service.chat(7301, id, "第一笔呢")).thenReturn(new AgentChatResponse("9301", LocalDateTime.now(),
                 List.of(), List.of(), 1, 0, 1L, 1, List.of()));
         mvc.perform(post("/api/agent/conversations").with(principal()).with(csrf()))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.conversationId").value(id));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.conversationId").value(id))
+                .andExpect(jsonPath("$.title").value("新对话"));
         mvc.perform(post("/api/agent/conversations/" + id + "/messages").with(principal()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"message\":\"第一笔呢\",\"userId\":7302}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.answer").value("9301"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answer").value("9301"))
+                .andExpect(jsonPath("$.orders").isEmpty());
         mvc.perform(delete("/api/agent/conversations/" + id + "/messages").with(principal()).with(csrf()))
                 .andExpect(status().isNoContent());
         verify(service).create(7301);
@@ -71,7 +73,7 @@ class AgentConversationApiTest {
         var path = "/api/agent/conversations/" + id;
         var now = LocalDateTime.now();
         when(service.readHistory(7301, id)).thenReturn(new AgentConversationService.ConversationHistory(
-                id, now, false, List.of(new AgentConversationService.VisibleTurn("问题", "答案", List.of(), List.of(), null))));
+                id, now, false, List.of(new AgentConversationService.VisibleTurn("问题", "答案", List.of(), List.of(), null, List.of()))));
         mvc.perform(get("/api/agent/conversations")).andExpect(status().isUnauthorized());
         mvc.perform(get(path + "/messages")).andExpect(status().isUnauthorized());
         mvc.perform(delete(path).with(csrf())).andExpect(status().isUnauthorized());
@@ -80,6 +82,7 @@ class AgentConversationApiTest {
         mvc.perform(get(path + "/messages").with(principal())).andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
                 .andExpect(jsonPath("$.turns[0].answer").value("答案"))
+                .andExpect(jsonPath("$.turns[0].title").doesNotExist())
                 .andExpect(jsonPath("$.turns[0].toolCalls").doesNotExist());
         mvc.perform(delete(path).with(principal()).with(csrf())).andExpect(status().isNoContent());
         verify(service).delete(7301, id);

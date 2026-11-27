@@ -21,7 +21,7 @@ function changePage(delta: number) { page.value += delta; void load() }
 <template>
   <h1 class="page-title">订单管理</h1><p class="page-description">按状态和用户编号查询订单，进入详情核对地址并登记发货。</p>
   <p v-if="error" class="form-error" role="alert">{{ error }}</p><p v-if="notice" class="operation-notice" role="status">{{ notice }}</p>
-  <form class="filter-bar" @submit.prevent="search"><select v-model="status" aria-label="管理订单状态"><option value="">全部状态</option><option v-for="(label, value) in orderStatusLabels" :key="value" :value="value">{{ label }}</option></select><input v-model="userId" class="admin-input" aria-label="下单用户编号" placeholder="用户编号（可选）" inputmode="numeric" /><el-button type="primary" native-type="submit">查询管理订单</el-button><el-button :disabled="saving" @click="load">刷新管理订单</el-button></form>
+  <form class="filter-bar" @submit.prevent="search"><el-select v-model="status" aria-label="管理订单状态" placeholder="全部状态"><el-option label="全部状态" value="" /><el-option v-for="(label, value) in orderStatusLabels" :key="value" :label="label" :value="value" /></el-select><el-input v-model="userId" class="admin-input" aria-label="下单用户编号" placeholder="用户编号（可选）" inputmode="numeric" /><el-button type="primary" native-type="submit">查询管理订单</el-button><el-button :disabled="saving" @click="load">刷新管理订单</el-button></form>
   <p v-if="busy" role="status">正在加载管理订单…</p>
   <template v-else-if="data">
     <p class="muted">共 {{ data.total }} 笔订单</p><p v-if="!data.items.length" class="empty-state">没有符合条件的管理订单。</p>

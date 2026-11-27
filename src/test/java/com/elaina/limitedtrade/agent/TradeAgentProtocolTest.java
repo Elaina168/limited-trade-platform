@@ -1,7 +1,9 @@
 package com.elaina.limitedtrade.agent;
 
 import com.elaina.limitedtrade.order.OrderPageResponse;
+import com.elaina.limitedtrade.order.OrderResponse;
 import com.elaina.limitedtrade.order.OrderService;
+import com.elaina.limitedtrade.order.TradeOrder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
@@ -89,6 +91,7 @@ class TradeAgentProtocolTest {
             var response = context.getBean(TradeAgentService.class).chat(7301L, "查询待支付订单和支付规则");
             assertThat(response.toolsUsed()).containsExactly("list_my_orders", "get_trade_rules");
             assertThat(response.sources()).extracting(TradeRule::id).containsExactly("PAYMENT");
+            assertThat(response.orders()).isEmpty();
             assertThat(response.modelCalls()).isEqualTo(3);
             assertThat(response.toolCalls()).isEqualTo(2);
             assertThat(response.totalTokens()).isEqualTo(55);
@@ -358,21 +361,37 @@ class TradeAgentProtocolTest {
     }
 
     @Test void followUpToolQueryUsesFreshOrderDataAndSameTrustedUser() throws Exception {
-        var order = new com.elaina.limitedtrade.order.TradeOrder();
+        var order = new TradeOrder();
         order.setId(9301L);
         order.setUserId(7301L);
         order.setStatus("PENDING_PAYMENT");
+        order.setTotalAmount(new java.math.BigDecimal("19.90"));
         order.setItems(List.of());
+        when(orders.listUserOrders(7301L, 1, 5, null))
+                .thenReturn(new OrderPageResponse(1, 5, 1, List.of(OrderResponse.from(order))));
         when(orders.getUserOrder(7301L, 9301L)).thenReturn(order);
-        replies.add(toolReply("get_my_order", "{\"orderId\":9301}"));
+        replies.add(toolReply("list_my_orders", "{\"page\":1,\"size\":5}"));
         replies.add(answerReply());
         replies.add(toolReply("get_my_order", "{\"orderId\":9301}"));
         replies.add(answerReply());
+        replies.add(answerReply().replace("没有待支付订单。", "订单编号 9301。"));
         runner().run(context -> {
             var service = context.getBean(TradeAgentService.class);
             var first = service.chatTurn(7301, "查询9301", List.of());
+            assertThat(first.response().orders()).singleElement().satisfies(card -> {
+                assertThat(card.id()).isEqualTo(9301L);
+                assertThat(card.status()).isEqualTo("PENDING_PAYMENT");
+                assertThat(card.totalAmount()).isEqualByComparingTo("19.90");
+            });
             order.setStatus("CLOSED");
-            service.chatTurn(7301, "它现在什么状态", first.messages());
+            var second = service.chatTurn(7301, "它现在什么状态", first.messages());
+            assertThat(second.response().orders()).singleElement().satisfies(card -> {
+                assertThat(card.id()).isEqualTo(9301L);
+                assertThat(card.status()).isEqualTo("CLOSED");
+            });
+            var third = service.chatTurn(7301, "订单编号是多少", second.messages());
+            assertThat(third.response().answer()).contains("9301");
+            assertThat(third.response().orders()).isEmpty();
             var messages = requests.get(3).path("messages");
             var latestTool = messages.get(messages.size() - 1);
             assertThat(latestTool.path("role").asText()).isEqualTo("tool");
@@ -380,7 +399,8 @@ class TradeAgentProtocolTest {
             assertThat(requests.get(2).path("messages").get(0).path("content").asText())
                     .contains("历史订单结果不是当前事实", "重新查询本人订单工具", "本次请求重新调用规则工具", "先请求提供订单ID或明确指代");
         });
-        verify(orders, times(2)).getUserOrder(7301L, 9301L);
+        verify(orders).listUserOrders(7301L, 1, 5, null);
+        verify(orders).getUserOrder(7301L, 9301L);
     }
 
     @Test void noEvidenceDoesNotCreateSources() throws Exception {

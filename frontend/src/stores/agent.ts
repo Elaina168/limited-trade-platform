@@ -39,7 +39,9 @@ export const useAgentStore = defineStore('agent', () => {
     const last = messages.value.at(-1)
     if (last?.role === 'assistant' && last.state !== 'complete') { last.state = 'stopped'; last.result = undefined }
   }
+  let needsInitialLoad = true
   function resetIdentity() {
+    needsInitialLoad = true
     interrupt()
     messages.value = []; conversations.value = []; conversationId.value = null
     page.value = 1; hasNext.value = false; error.value = ''; notice.value = ''
@@ -48,7 +50,7 @@ export const useAgentStore = defineStore('agent', () => {
   watch([() => auth.user?.id, () => auth.user?.role], resetIdentity, { flush: 'sync' })
   let active = false
   watch(() => auth.status, status => {
-    if (active && status === 'authenticated') void browse()
+    if (active && needsInitialLoad && status === 'authenticated') void open()
   })
   function failure(cause: unknown, creating = false) {
     const code = cause instanceof HttpError ? cause.status : cause instanceof AgentStreamError ? cause.code : null
@@ -292,7 +294,12 @@ export const useAgentStore = defineStore('agent', () => {
       }
     } finally { if (current === generation) { busy.value = false; action.value = null; controller = null } }
   }
-  function open() { active = true; return browse() }
+  function open() {
+    active = true
+    if (!canSend.value) return
+    needsInitialLoad = false
+    return browse()
+  }
   function leave() {
     active = false
     if (busy.value) interrupt()

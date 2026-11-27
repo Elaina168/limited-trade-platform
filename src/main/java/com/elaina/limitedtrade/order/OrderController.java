@@ -49,10 +49,10 @@ public class OrderController {
     public OrderPageResponse listOrders(@AuthenticationPrincipal PlatformUserDetails user,
             @RequestParam(defaultValue = "1") @Positive int page,
             @RequestParam(defaultValue = "20") @Positive @Max(100) int size,
-            @Parameter(description = "可选订单状态，省略时查询全部状态", schema = @Schema(allowableValues = {
-                    "PENDING_PAYMENT", "PAID", "CANCELED", "CLOSED", "SHIPPED", "COMPLETED"}))
+            @Parameter(description = "可选订单状态，省略时查询全部状态，CANCELED_OR_CLOSED 合并已取消和已关闭订单", schema = @Schema(allowableValues = {
+                    "PENDING_PAYMENT", "PAID", "CANCELED", "CLOSED", "SHIPPED", "COMPLETED", "CANCELED_OR_CLOSED"}))
             @RequestParam(required = false)
-            @Pattern(regexp = "PENDING_PAYMENT|PAID|CANCELED|CLOSED|SHIPPED|COMPLETED") String status) {
+            @Pattern(regexp = "PENDING_PAYMENT|PAID|CANCELED|CLOSED|SHIPPED|COMPLETED|CANCELED_OR_CLOSED") String status) {
         return orderService.listUserOrders(user.getId(), page, size, status);
     }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { safeRedirect } from './utils/safe-redirect.ts'
 import { useAuthStore } from './stores/auth.ts'
 
 const auth = useAuthStore()
@@ -8,10 +9,11 @@ const route = useRoute()
 const router = useRouter()
 
 watch(() => auth.status, status => {
-  if (status === 'anonymous' && route.meta.requiresAuth) void router.replace({ name: 'login' })
+  if (status === 'anonymous' && route.meta.requiresAuth) void router.replace({ name: 'login', query: { redirect: route.fullPath } })
   if (status === 'authenticated') {
-    if (route.name === 'login' || route.name === 'register') void router.replace({ name: auth.isAdmin ? 'admin' : 'products' })
-    else if (route.meta.requiresAdmin && !auth.isAdmin) void router.replace({ name: 'forbidden' })
+    if (route.name === 'login' || route.name === 'register') {
+      void router.replace(safeRedirect(route.query.redirect) ?? { name: auth.isAdmin ? 'admin' : 'products' })
+    } else if (route.meta.requiresAdmin && !auth.isAdmin) void router.replace({ name: 'forbidden' })
   }
 })
 

@@ -1,5 +1,6 @@
 import { RequestError } from '../api/http.ts'
 import type { AgentEvent, AgentResponse } from '../types/agent.ts'
+import { orderStatusLabels } from './orders.ts'
 
 export class AgentProtocolError extends RequestError {}
 export class AgentStreamError extends RequestError {
@@ -17,6 +18,10 @@ function response(value: Record<string, unknown>): AgentResponse {
         && ['id','documentId','title','path','text'].every(key => typeof item[key] === 'string')
         && count(item.startLine) && item.startLine >= 1 && count(item.endLine) && item.endLine >= item.startLine
         && typeof item.score === 'number' && Number.isFinite(item.score))) throw new AgentProtocolError('助手回答或来源格式不正确。')
+  if (!Array.isArray(value.orders) || !value.orders.every(item => object(item)
+      && count(item.id) && item.id > 0 && typeof item.status === 'string' && Object.hasOwn(orderStatusLabels, item.status)
+      && typeof item.totalAmount === 'number' && Number.isFinite(item.totalAmount)
+      && typeof item.expiresAt === 'string')) throw new AgentProtocolError('助手关联订单格式不正确。')
   return value as unknown as AgentResponse
 }
 

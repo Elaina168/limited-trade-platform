@@ -4,8 +4,11 @@ import type { AgentEvent, ConversationHistory, ConversationPage, CreatedConversa
 
 export async function createConversation(signal: AbortSignal) {
   const value = await postJson<unknown>('/api/agent/conversations', undefined, sessionRevision(), signal)
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || !('conversationId' in value) || !('expiresAt' in value) || typeof value.conversationId !== 'string' || !value.conversationId || typeof value.expiresAt !== 'string') throw new RequestError('助手返回的会话信息无法读取。')
-  return { conversationId: value.conversationId, expiresAt: value.expiresAt } as CreatedConversation
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || !('conversationId' in value) || !('expiresAt' in value) || !('title' in value)
+      || typeof value.conversationId !== 'string' || !value.conversationId || typeof value.expiresAt !== 'string' || typeof value.title !== 'string') {
+    throw new RequestError('助手返回的会话信息无法读取。')
+  }
+  return { conversationId: value.conversationId, expiresAt: value.expiresAt, title: value.title } satisfies CreatedConversation
 }
 export async function listConversations(page: number, signal: AbortSignal) {
   const result = await readJson<ConversationPage>(`/api/agent/conversations?page=${page}`, sessionRevision(), signal)

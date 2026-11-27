@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { safeRedirect } from '../utils/safe-redirect.ts'
 import { useAuthStore } from '../stores/auth.ts'
 
 const auth = useAuthStore()
+const route = useRoute()
 const username = ref('')
 const password = ref('')
 const validation = ref('')
@@ -46,7 +49,7 @@ async function submit() {
           <p v-if="validation || auth.error" class="form-error" role="alert">{{ validation || auth.error }}</p>
           <el-button class="login-submit" type="primary" native-type="submit" :loading="auth.busy" size="large">登录</el-button>
         </form>
-        <p><RouterLink class="text-link" to="/register">没有账号？立即注册</RouterLink></p>
+        <p><RouterLink class="text-link" :to="{ name: 'register', query: { redirect: safeRedirect(route.query.redirect) } }">没有账号？立即注册</RouterLink></p>
         <RouterLink class="text-link" to="/products">先逛逛商品 →</RouterLink>
       </div>
       <p class="login-footer">限量集市 · 让每一次选择都有回响</p>

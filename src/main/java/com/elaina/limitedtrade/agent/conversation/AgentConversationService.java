@@ -1,10 +1,12 @@
 package com.elaina.limitedtrade.agent.conversation;
 
 import com.elaina.limitedtrade.agent.AgentChatResponse;
+import com.elaina.limitedtrade.agent.AgentOrderSummary;
 import com.elaina.limitedtrade.agent.AgentProperties;
 import com.elaina.limitedtrade.agent.TradeAgentService;
 import com.elaina.limitedtrade.agent.TradeRule;
 import com.elaina.limitedtrade.agent.rag.RuleChunk;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.elaina.limitedtrade.agent.AgentStream;
 import com.elaina.limitedtrade.agent.AgentTurn;
@@ -53,7 +55,7 @@ public class AgentConversationService {
             String id = UUID.randomUUID().toString();
             var expiry = now.plusHours(24);
             mapper.insert(new AgentConversation(id, userId, 0, null, null, expiry));
-            return new CreatedConversation(id, expiry);
+            return new CreatedConversation(id, expiry, null);
         });
     }
 
@@ -119,7 +121,7 @@ public class AgentConversationService {
         String encoded = history.encode(turn.messages());
         var response = turn.response();
         String visible = encodeVisible(new VisibleTurn(prepared.message(), response.answer(),
-                response.sources(), response.knowledgeSources(), prepared.clientTurnId()));
+                response.sources(), response.knowledgeSources(), prepared.clientTurnId(), response.orders()));
         transaction.executeWithoutResult(status -> {
             var now = LocalDateTime.now();
             var current = owned(prepared.userId(), prepared.id(), now);
@@ -130,7 +132,14 @@ public class AgentConversationService {
             var retained = history.retain(turns);
             mapper.deleteTurns(prepared.id());
             for (int i = 0; i < retained.size(); i++) mapper.insertTurn(prepared.id(), i + 1, retained.get(i));
-            mapper.insertVisibleTurn(prepared.id(), current.revision() + 1, visible);
+            // 标题随展示快照保留，最初的问答移出历史窗口后仍可读取。
+            String title = mapper.findFirstVisibleTitle(prepared.id());
+            if (title == null) {
+                String question = prepared.message();
+                int length = Math.min(question.codePointCount(0, question.length()), 22);
+                title = question.substring(0, question.offsetByCodePoints(0, length));
+            }
+            mapper.insertVisibleTurn(prepared.id(), current.revision() + 1, visible, title);
             mapper.trimVisibleTurns(prepared.id());
             mapper.advance(prepared.id(), now.plusHours(24));
         });
@@ -187,10 +196,20 @@ public class AgentConversationService {
         return new ResponseStatusException(HttpStatus.CONFLICT, reason);
     }
 
-    public record CreatedConversation(String conversationId, LocalDateTime expiresAt) { }
+    public record CreatedConversation(String conversationId, LocalDateTime expiresAt, String title) {
+        public CreatedConversation {
+            if (title == null) title = "新对话";
+        }
+    }
     public record ConversationPage(int page, int size, boolean hasNext, List<CreatedConversation> items) { }
     public record ConversationHistory(String conversationId, LocalDateTime expiresAt, boolean generating,
                                       List<VisibleTurn> turns) { }
-    public record VisibleTurn(String question, String answer, List<TradeRule> sources, List<RuleChunk> knowledgeSources, UUID clientTurnId) { }
+    @JsonIgnoreProperties("title")
+    public record VisibleTurn(String question, String answer, List<TradeRule> sources,
+                              List<RuleChunk> knowledgeSources, UUID clientTurnId, List<AgentOrderSummary> orders) {
+        public VisibleTurn {
+            if (orders == null) orders = List.of();
+        }
+    }
     public record PreparedTurn(long userId, String id, String message, long revision, String token, List<String> turns, UUID clientTurnId) { }
 }

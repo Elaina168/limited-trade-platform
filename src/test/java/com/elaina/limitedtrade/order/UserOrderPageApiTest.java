@@ -9,6 +9,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,6 +28,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class UserOrderPageApiTest {
     @Autowired
     private MockMvc mvc;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void defaultPageContainsOnlyOwnedOrdersAndDetails() throws Exception {
@@ -73,6 +76,22 @@ class UserOrderPageApiTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].id").value(9301));
+    }
+
+    @Test
+    void combinedCanceledAndClosedFilterKeepsOwnedTotalAndDescendingPagination() throws Exception {
+        jdbc.update("UPDATE trade_order SET status = 'CLOSED' WHERE id = 9301");
+        var buyer = user(new PlatformUserDetails(new AppUser(7301L, "buyer", "unused", "USER")));
+        mvc.perform(get("/api/orders").param("status", "CANCELED_OR_CLOSED").param("size", "1").with(buyer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(9303))
+                .andExpect(jsonPath("$.items[0].status").value("CANCELED"));
+        mvc.perform(get("/api/orders").param("status", "CANCELED_OR_CLOSED").param("size", "1").param("page", "2").with(buyer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(9301))
+                .andExpect(jsonPath("$.items[0].status").value("CLOSED"));
     }
 
     @ParameterizedTest

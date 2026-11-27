@@ -8,6 +8,8 @@ import org.apache.ibatis.annotations.Param;
 public interface CartItemMapper {
     List<CartItemResponse> findUserItems(long userId);
 
+    Integer findQuantity(@Param("userId") long userId, @Param("productId") long productId);
+
     int setQuantity(@Param("userId") long userId, @Param("productId") long productId,
                     @Param("quantity") int quantity);
 

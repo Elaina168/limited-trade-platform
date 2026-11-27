@@ -20,7 +20,9 @@ public interface AgentConversationMapper {
     List<String> findTurns(String id);
     void deleteTurns(String id);
     List<String> findVisibleTurns(String id);
-    void insertVisibleTurn(@Param("id") String id, @Param("number") long number, @Param("json") String json);
+    String findFirstVisibleTitle(String id);
+    void insertVisibleTurn(@Param("id") String id, @Param("number") long number, @Param("json") String json,
+                           @Param("title") String title);
     void trimVisibleTurns(String id);
     void deleteVisibleTurns(String id);
     void insertTurn(@Param("id") String id, @Param("number") int number, @Param("json") String json);

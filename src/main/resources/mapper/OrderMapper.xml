@@ -19,9 +19,14 @@
 
     <sql id="userOrderFilters">
         WHERE user_id = #{userId}
-        <if test="status != null">
-            AND status = #{status}
-        </if>
+        <choose>
+            <when test="status == 'CANCELED_OR_CLOSED'">
+                AND status IN ('CANCELED', 'CLOSED')
+            </when>
+            <when test="status != null">
+                AND status = #{status}
+            </when>
+        </choose>
     </sql>
 
     <select id="countUserOrders" resultType="long">

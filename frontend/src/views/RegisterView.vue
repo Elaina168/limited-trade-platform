@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { safeRedirect } from '../utils/safe-redirect.ts'
 import { ElMessage } from 'element-plus'
 import 'element-plus/es/components/message/style/css'
 import { postJson, errorMessage, HttpError } from '../api/http.ts'
 import type { CurrentUser } from '../types/auth.ts'
 
 const router = useRouter()
+const route = useRoute()
 const username = ref('')
 const password = ref('')
 const confirmation = ref('')
@@ -27,7 +29,7 @@ async function submit() {
   busy.value = true
   try {
     await postJson<CurrentUser>('/api/auth/register', { username: name, password: password.value })
-    await router.replace({ name: 'login' })
+    await router.replace({ name: 'login', query: { redirect: safeRedirect(route.query.redirect) } })
     ElMessage.success('注册成功，请使用新账号登录。')
   } catch (cause) {
     error.value = cause instanceof HttpError && cause.status === 409
@@ -48,7 +50,7 @@ async function submit() {
         <p class="muted">密码至少8个字符。</p>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <el-button type="primary" native-type="submit" :loading="busy">注册</el-button>
-        <RouterLink class="text-link" to="/login">已有账号，前往登录</RouterLink>
+        <RouterLink class="text-link" :to="{ name: 'login', query: { redirect: safeRedirect(route.query.redirect) } }">已有账号，前往登录</RouterLink>
       </form>
     </section>
   </main>

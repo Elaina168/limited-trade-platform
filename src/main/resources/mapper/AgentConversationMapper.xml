@@ -3,8 +3,15 @@
 <mapper namespace="com.elaina.limitedtrade.agent.conversation.AgentConversationMapper">
     <delete id="deleteExpired">DELETE FROM agent_conversation WHERE user_id=#{userId} AND expires_at &lt;= #{now}</delete>
     <select id="countOwned" resultType="int">SELECT COUNT(*) FROM agent_conversation WHERE user_id=#{userId}</select>
+    <sql id="visibleTitle">
+        COALESCE(JSON_UNQUOTE(JSON_EXTRACT(display_json, '$.title')),
+                 LEFT(JSON_UNQUOTE(JSON_EXTRACT(display_json, '$.question')), 22))
+    </sql>
     <select id="listActive" resultType="com.elaina.limitedtrade.agent.conversation.AgentConversationService$CreatedConversation">
-        SELECT id AS conversation_id, expires_at FROM agent_conversation
+        SELECT conversation.id AS conversation_id, expires_at,
+            (SELECT <include refid="visibleTitle"/> FROM agent_conversation_visible_turn
+             WHERE conversation_id=conversation.id ORDER BY turn_no LIMIT 1) AS title
+        FROM agent_conversation AS conversation
         WHERE user_id=#{userId} AND expires_at &gt; #{now}
         ORDER BY expires_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -35,9 +42,13 @@
     <select id="findVisibleTurns" resultType="java.lang.String">
         SELECT display_json FROM agent_conversation_visible_turn WHERE conversation_id=#{id} ORDER BY turn_no
     </select>
+    <select id="findFirstVisibleTitle" resultType="java.lang.String">
+        SELECT <include refid="visibleTitle"/> FROM agent_conversation_visible_turn
+        WHERE conversation_id=#{id} ORDER BY turn_no LIMIT 1
+    </select>
     <insert id="insertVisibleTurn">
         INSERT INTO agent_conversation_visible_turn(conversation_id,turn_no,display_json)
-        VALUES (#{id},#{number},#{json})
+        VALUES (#{id},#{number},JSON_SET(#{json}, '$.title', #{title}))
     </insert>
     <delete id="trimVisibleTurns">
         DELETE FROM agent_conversation_visible_turn

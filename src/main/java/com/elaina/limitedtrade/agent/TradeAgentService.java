@@ -222,7 +222,7 @@ public class TradeAgentService {
                     httpStatus = 200;
                     var result = new AgentChatResponse(answer, run.queriedAt, List.copyOf(run.toolsUsed),
                             List.copyOf(run.sources.values()), run.modelCalls, run.toolCalls, run.totalTokens, run.elapsedMs(),
-                            List.copyOf(cited.values()));
+                            List.copyOf(cited.values()), List.copyOf(run.orders.values()));
                     var turn = new ArrayList<Message>(prompt.getInstructions().subList(1 + retainedHistory, prompt.getInstructions().size()));
                     turn.add(new AssistantMessage(answer));
                     return new AgentTurn(result, List.copyOf(turn));
@@ -400,6 +400,15 @@ public class TradeAgentService {
                         var retrieved = mapper.readValue(result, RuleKnowledgeBase.SearchResult.class);
                         for (var chunk : retrieved.chunks()) run.knowledgeSources.put(chunk.id(), chunk);
                     }
+                    // 卡片只使用本轮已通过授权的工具结果，同一个订单以最后一次查询为准。
+                    if ("get_my_order".equals(name)) {
+                        var order = mapper.readValue(result, AgentOrderSummary.class);
+                        run.orders.put(order.id(), order);
+                    }
+                    if ("list_my_orders".equals(name)) {
+                        var page = mapper.readValue(result, TradeAgentTools.OrderPage.class);
+                        for (var order : page.items()) run.orders.put(order.id(), order);
+                    }
                     status = 200;
                     reason = "allowed";
                     return result;
@@ -425,7 +434,7 @@ public class TradeAgentService {
                     reason = "rejected";
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工具参数无效");
                 } catch (JsonProcessingException error) {
-                    throw new IllegalStateException("规则工具序列化结果不符合约定", error);
+                    throw new IllegalStateException("工具序列化结果不符合约定", error);
                 } finally {
                     AgentToolAccess.record(scope, name, status, reason);
                 }
@@ -477,6 +486,7 @@ public class TradeAgentService {
         private final List<String> toolsUsed = new ArrayList<>();
         private final Map<String, TradeRule> sources = new LinkedHashMap<>();
         private final Map<String, RuleChunk> knowledgeSources = new LinkedHashMap<>();
+        private final Map<Long, AgentOrderSummary> orders = new LinkedHashMap<>();
         private int modelCalls;
         private int toolCalls;
         private Long totalTokens = 0L;

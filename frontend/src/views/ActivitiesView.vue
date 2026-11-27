@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue'
+import { useVisibilityRefresh } from '../composables/useVisibilityRefresh.ts'
 import { useAuthStore } from '../stores/auth.ts'
 import { activities } from '../api/catalog.ts'
 import { errorMessage, SessionChangedError } from '../api/http.ts'
@@ -12,18 +13,21 @@ const error = ref('')
 const now = ref(Date.now())
 const timer = window.setInterval(() => { now.value = Date.now() }, 1000)
 let sequence = 0
-async function load() {
+let refreshing = false
+let loaded = false
+async function load(silent = false) {
   const current = ++sequence
-  busy.value = true
-  error.value = ''
-  try { const data = await activities(); if (current === sequence) list.value = data }
-  catch (cause) { if (current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
-  finally { if (current === sequence) busy.value = false }
+  refreshing = true
+  if (!silent) { busy.value = true; error.value = '' }
+  try { const data = await activities(); if (current === sequence) { list.value = data; error.value = ''; loaded = true } }
+  catch (cause) { if (!silent && current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
+  finally { if (current === sequence) { busy.value = false; refreshing = false } }
 }
 // 身份操作结束后，即使还是同一账号，也要补载已被作废的旧请求。
 watch([() => auth.user?.id, () => auth.status], () => {
-  if (auth.status === 'authenticated' || auth.status === 'anonymous') void load()
+  if (!loaded && !refreshing && (auth.status === 'authenticated' || auth.status === 'anonymous')) void load()
 }, { immediate: true })
+useVisibilityRefresh(() => { void load(true) }, () => refreshing || auth.busy)
 onUnmounted(() => { sequence++; window.clearInterval(timer) })
 </script>
 
@@ -31,7 +35,7 @@ onUnmounted(() => { sequence++; window.clearInterval(timer) })
   <p class="section-kicker">LIMITED EVENTS</p><h1 class="page-title">限量活动</h1>
   <p class="page-description">活动时间均为北京时间。</p>
   <p v-if="busy" role="status">正在加载活动…</p>
-  <div v-else-if="error" role="alert"><p class="form-error">{{ error }}</p><el-button @click="load">重试</el-button></div>
+  <div v-else-if="error" role="alert"><p class="form-error">{{ error }}</p><el-button @click="load()">重试</el-button></div>
   <template v-else>
     <p v-if="!list.length" class="empty-state">暂时没有活动。</p>
     <div class="market-grid">

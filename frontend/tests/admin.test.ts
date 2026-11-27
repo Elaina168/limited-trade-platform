@@ -62,6 +62,23 @@ test('admin writes with lost responses reread the server without resending write
   assert.equal(page.notice.value, '')
 })
 
+test('admin product search uses the paged endpoint with the active filters', async () => {
+  const api = await import('../src/api/admin.ts')
+  const urls: URL[] = []
+  globalThis.fetch = async input => {
+    urls.push(new URL(String(input), 'http://localhost'))
+    return json({ page: 2, size: 20, total: 0, items: [] })
+  }
+  const result = await api.adminProductsPage(2, '  键盘%  ', '12', 'OFF_SALE')
+  await api.adminProductsPage(1, '', '', '')
+  await api.adminProduct(3)
+  assert.equal(urls[0]!.pathname, '/api/admin/products/page')
+  assert.deepEqual(Object.fromEntries(urls[0]!.searchParams), { page: '2', size: '20', keyword: '键盘%', categoryId: '12', status: 'OFF_SALE' })
+  assert.deepEqual(Object.fromEntries(urls[1]!.searchParams), { page: '1', size: '20' })
+  assert.equal(urls[2]!.pathname, '/api/admin/products/3')
+  assert.equal(result.total, 0)
+})
+
 test('admin product status uses PATCH and current CSRF while detail update excludes stock', async () => {
   const api = await import('../src/api/admin.ts')
   const writes: { path: string; options: RequestInit }[] = []

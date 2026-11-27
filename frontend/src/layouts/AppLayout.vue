@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { ElDropdown, ElDropdownItem, ElDropdownMenu } from 'element-plus'
+import 'element-plus/es/components/dropdown/style/css'
 import PendingOrderBanner from '../components/PendingOrderBanner.vue'
 import { useRoute } from 'vue-router'
+import { useVisibilityRefresh } from '../composables/useVisibilityRefresh.ts'
+import { useCartStore } from '../stores/cart.ts'
+import { useCheckoutStore } from '../stores/checkout.ts'
 import { useAuthStore } from '../stores/auth.ts'
 
 const auth = useAuthStore()
+const cart = useCartStore()
+const checkout = useCheckoutStore()
+watch(() => checkout.recoveredOrder, order => { if (order) void cart.refresh() })
 const route = useRoute()
+useVisibilityRefresh(() => { void cart.refresh() }, () => route.name === 'cart' || !auth.user || auth.busy || checkout.busy)
 const menuOpen = ref(false)
 </script>
 
@@ -17,10 +26,9 @@ const menuOpen = ref(false)
       <nav aria-label="主导航" @click="menuOpen = false">
         <RouterLink to="/products" active-class="is-active"><span class="nav-dot"></span>商品浏览</RouterLink>
         <RouterLink to="/activities" active-class="is-active"><span class="nav-dot"></span>限量活动</RouterLink>
-        <RouterLink v-if="auth.user" to="/" exact-active-class="is-active"><span class="nav-dot"></span>账号概览</RouterLink>
         <RouterLink v-if="auth.user" to="/agent" active-class="is-active"><span class="nav-dot"></span>交易助手</RouterLink>
         <RouterLink v-if="auth.user" to="/orders" active-class="is-active"><span class="nav-dot"></span>我的订单</RouterLink>
-        <RouterLink v-if="auth.user" to="/cart" active-class="is-active"><span class="nav-dot"></span>购物车</RouterLink>
+        <RouterLink v-if="auth.user" to="/cart" active-class="is-active"><span class="nav-dot"></span>购物车 <span v-if="cart.totalCount > 0" class="role-badge" aria-label="购物车商品总件数">{{ cart.totalCount }}</span></RouterLink>
         <RouterLink v-if="auth.user" to="/addresses" active-class="is-active"><span class="nav-dot"></span>收货地址</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/admin" exact-active-class="is-active"><span class="nav-dot"></span>管理中心</RouterLink>
         <template v-if="auth.isAdmin">
@@ -39,8 +47,17 @@ const menuOpen = ref(false)
         <button class="menu-toggle" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-label="切换导航">☰</button>
         <span class="breadcrumb">我的集市 <span>/</span> {{ route.meta.title }}</span>
         <div v-if="auth.user" class="account-actions">
-          <span class="avatar">{{ auth.user?.username.slice(0, 1).toUpperCase() }}</span>
-          <span class="account-name">{{ auth.user?.username }}</span>
+          <ElDropdown trigger="click">
+            <button type="button" class="account-menu" aria-label="账号菜单">
+              <span class="avatar">{{ auth.user.username.slice(0, 1).toUpperCase() }}</span>
+              <span class="account-name">{{ auth.user.username }}</span>
+            </button>
+            <template #dropdown>
+              <ElDropdownMenu>
+                <ElDropdownItem><RouterLink class="text-link" to="/account">账号概览</RouterLink></ElDropdownItem>
+              </ElDropdownMenu>
+            </template>
+          </ElDropdown>
           <el-button text :loading="auth.busy" @click="auth.logout()">退出登录</el-button>
         </div>
         <div v-else class="account-actions"><RouterLink class="text-link" to="/login">登录</RouterLink><RouterLink class="text-link" to="/register">注册</RouterLink></div>

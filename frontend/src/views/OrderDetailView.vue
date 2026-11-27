@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, h, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessageBox, ElPopconfirm } from 'element-plus'
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/popconfirm/style/css'
 import { useAuthStore } from '../stores/auth.ts'
 import { useCheckoutStore } from '../stores/checkout.ts'
 import { readOrder } from '../api/checkout.ts'
-import { changeOrder } from '../api/orders.ts'
-import { errorMessage, HttpError, SessionChangedError } from '../api/http.ts'
-import { availableOrderActions, orderActionLabels, orderStatusLabels } from '../utils/orders.ts'
-import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
+import { submitOrderAction } from '../api/orders.ts'
+import { errorMessage, HttpError, onSessionChange, SessionChangedError, sessionRevision } from '../api/http.ts'
+import { useVisibilityRefresh } from '../composables/useVisibilityRefresh.ts'
+import { availableOrderActions, orderActionLabels, orderPaymentCountdown, orderStatusLabels } from '../utils/orders.ts'
 import type { Order, OrderAction } from '../types/checkout.ts'
 
 const auth = useAuthStore()
@@ -16,6 +19,8 @@ const route = useRoute()
 const order = ref<Order | null>(null)
 const busy = ref(false)
 const acting = ref<OrderAction | null>(null)
+const cancelOpen = ref(false)
+let closeCancelBox: (() => void) | undefined
 const refreshRequired = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -25,11 +30,16 @@ let sequence = 0
 let operation = 0
 let nextExpiryRead = 0
 const actions = computed(() => order.value ? availableOrderActions(order.value, now.value) : [])
-const blocked = computed(() => busy.value || acting.value !== null || auth.busy || refreshRequired.value)
-const secondsLeft = computed(() => order.value ? Math.max(0, Math.ceil((new Date(order.value.expiresAt).getTime() - now.value) / 1000)) : 0)
-const countdown = computed(() => `${Math.floor(secondsLeft.value / 60)}分${secondsLeft.value % 60}秒`)
+const blocked = computed(() => acting.value !== null || auth.status !== 'authenticated' || refreshRequired.value)
+function dismissCancelBox() {
+  cancelOpen.value = false
+  closeCancelBox?.()
+  closeCancelBox = undefined
+}
 function reset() {
-  sequence++; operation++; nextExpiryRead = 0; order.value = null; acting.value = null; refreshRequired.value = false; error.value = ''; notice.value = ''
+  sequence++; operation++; nextExpiryRead = 0; order.value = null; acting.value = null
+  dismissCancelBox()
+  refreshRequired.value = false; busy.value = false; error.value = ''; notice.value = ''
 }
 function applyOrder(data: Order) {
   order.value = data
@@ -37,6 +47,7 @@ function applyOrder(data: Order) {
   refreshRequired.value = false
 }
 async function load() {
+  if (busy.value || acting.value || auth.status !== 'authenticated') return
   const current = ++sequence
   busy.value = true; error.value = ''
   const id = Number(route.params.id)
@@ -53,46 +64,59 @@ async function load() {
   } finally { if (current === sequence) busy.value = false }
 }
 async function act(action: OrderAction) {
-  if (blocked.value || !order.value || !actions.value.includes(action)) return
-  if (action === 'cancel' && !window.confirm('确认取消这笔订单？取消后将归还库存并释放占用的优惠券。')) return
-  if (action === 'receive' && !window.confirm('请确认已收到商品，再确认收货。')) return
+  if (blocked.value || !order.value || !availableOrderActions(order.value, Date.now()).includes(action)) return
   const id = order.value.id
-  const success = action === 'pay' ? '模拟支付成功。' : action === 'cancel' ? '订单已取消，库存与优惠券占用已释放。' : '已确认收货。'
   const current = ++operation
+  const revision = sessionRevision()
+  const isCurrent = () => current === operation && revision === sessionRevision()
+  // 开始写入时废弃进行中的读取，避免旧快照覆盖操作结果。
+  sequence++; busy.value = false
   acting.value = action; error.value = ''; notice.value = ''
   try {
-    const data = await changeOrder(id, action)
-    if (current !== operation) return
-    // 同时结束已作废的焦点读取状态，避免迟到GET覆盖操作结果或让页面一直忙碌。
-    sequence++; busy.value = false
-    applyOrder(data)
-    error.value = ''
-    notice.value = success
-  } catch (cause) {
-    if (current !== operation || cause instanceof SessionChangedError) return
-    sequence++; busy.value = false
-    if (!canReconcileWrite(cause)) { error.value = errorMessage(cause); return }
-    notice.value = '正在核对订单状态…'
-    const result = await reconcileWrite(() => readOrder(id), data =>
-      action === 'pay' ? ['PAID', 'SHIPPED', 'COMPLETED'].includes(data.status)
-        : data.status === (action === 'cancel' ? 'CANCELED' : 'COMPLETED'),
-    () => current === operation)
-    if (!result || current !== operation) {
-      if (current === operation) notice.value = ''
-      return
-    }
-    if (result.snapshot) {
-      applyOrder(result.snapshot)
-      notice.value = result.confirmed ? success : `已更新订单状态为「${orderStatusLabels[result.snapshot.status]}」，未确认本次操作完成。`
-    } else {
-      refreshRequired.value = true
-      notice.value = '暂时无法核对订单状态。'
-    }
+    const result = await submitOrderAction(id, action, isCurrent, () => { notice.value = '正在核对订单状态…' })
+    if (!result || !isCurrent()) return
+    if (result.snapshot) applyOrder(result.snapshot)
+    else if (result.notice) refreshRequired.value = true
+    error.value = result.error ?? ''
+    notice.value = result.notice ?? ''
   } finally { if (current === operation) acting.value = null }
 }
+async function confirmCancel() {
+  if (blocked.value || cancelOpen.value || !order.value || !actions.value.includes('cancel')) return
+  const id = order.value.id
+  const current = operation
+  const revision = sessionRevision()
+  cancelOpen.value = true
+  try {
+    await ElMessageBox.confirm(({ close }) => {
+      // 只关闭当前订单的确认框，避免影响页面上的其他弹窗。
+      if (current === operation) closeCancelBox = close
+      else queueMicrotask(close)
+      return h('span', '取消后将归还库存并释放占用的优惠券。')
+    }, '取消订单', {
+      type: 'warning',
+      confirmButtonText: '确认取消订单',
+      cancelButtonText: '保留订单',
+      confirmButtonType: 'danger',
+      distinguishCancelAndClose: true,
+      closeOnHashChange: false,
+    })
+  } catch (outcome) {
+    if (outcome === 'cancel' || outcome === 'close') return
+    throw outcome
+  } finally {
+    if (current === operation) {
+      cancelOpen.value = false
+      closeCancelBox = undefined
+    }
+  }
+  if (current === operation && revision === sessionRevision() && order.value?.id === id) await act('cancel')
+}
+const stopSessionListener = onSessionChange(reset)
+useVisibilityRefresh(() => { void load() }, () => busy.value || acting.value !== null || auth.status !== 'authenticated')
 watch([() => route.params.id, () => auth.user?.id], reset, { flush: 'sync' })
 watch([() => route.params.id, () => auth.user?.id, () => auth.status], () => {
-  if (auth.status === 'authenticated' && !acting.value) void load()
+  if (auth.status === 'authenticated' && !order.value) void load()
 }, { immediate: true })
 watch(now, time => {
   if (document.hidden || auth.status !== 'authenticated' || busy.value || acting.value || order.value?.status !== 'PENDING_PAYMENT'
@@ -103,23 +127,33 @@ watch(now, time => {
   nextExpiryRead = time + (time - expiry < 60_000 ? 5_000 : 30_000)
   void load()
 })
-onUnmounted(() => { sequence++; operation++; window.clearInterval(timer) })
+onUnmounted(() => { sequence++; operation++; dismissCancelBox(); window.clearInterval(timer); stopSessionListener() })
 </script>
 
 <template>
   <RouterLink class="text-link" to="/orders">← 返回我的订单</RouterLink>
   <h1 class="page-title">订单详情</h1>
   <p v-if="error" class="form-error" role="alert">{{ error }}</p><p v-if="notice" class="operation-notice" role="status">{{ notice }}</p>
-  <div class="business-actions"><el-button :loading="busy" :disabled="acting !== null || auth.busy" @click="load">刷新订单</el-button></div>
   <p v-if="busy && !order" role="status">正在读取本人订单…</p>
   <template v-if="order">
-    <section class="market-card order-result">
+    <section :key="order.id" class="market-card order-result">
       <div class="section-heading"><h2>订单 #{{ order.id }}</h2><span class="role-badge">{{ orderStatusLabels[order.status] }}</span></div>
       <RouterLink class="text-link" :to="{ name: 'agent', query: { orderId: order.id } }">问这笔订单</RouterLink>
       <p class="price">应付 ¥{{ Number(order.totalAmount).toFixed(2) }}</p>
       <p>原价 ¥{{ Number(order.originalAmount).toFixed(2) }} · 优惠 ¥{{ Number(order.discountAmount).toFixed(2) }}</p>
-      <p v-if="order.status === 'PENDING_PAYMENT'" class="operation-notice">{{ secondsLeft > 0 ? `支付剩余 ${countdown}` : '已过支付截止时间，正在自动核对订单状态。' }}</p>
-      <div class="business-actions"><el-button v-for="action in actions" :key="action" :type="action === 'pay' ? 'primary' : 'default'" :disabled="blocked" :loading="acting === action" @click="act(action)">{{ orderActionLabels[action] }}</el-button></div>
+      <p v-if="order.status === 'PENDING_PAYMENT'" class="operation-notice">{{ orderPaymentCountdown(order, now) }}</p>
+      <div class="business-actions">
+        <template v-for="action in actions" :key="action">
+          <ElPopconfirm v-if="action === 'receive'" title="请确认已经收到商品。" confirm-button-text="确认收到"
+            cancel-button-text="暂不确认" :disabled="blocked" @confirm="act('receive')">
+            <template #reference>
+              <el-button :disabled="blocked" :loading="acting === 'receive'">{{ orderActionLabels.receive }}</el-button>
+            </template>
+          </ElPopconfirm>
+          <el-button v-else :type="action === 'pay' ? 'primary' : 'default'" :disabled="blocked || cancelOpen"
+            :loading="acting === action" @click="action === 'cancel' ? confirmCancel() : act(action)">{{ action === 'pay' && route.query.justCreated === '1' ? '立即模拟支付' : orderActionLabels[action] }}</el-button>
+        </template>
+      </div>
       <p v-if="order.status === 'PENDING_PAYMENT'" class="muted">模拟支付用于演示订单状态流转，不会产生真实扣款。</p>
     </section>
     <section class="market-card order-result"><h2>成交商品</h2><ul class="order-items"><li v-for="item in order.items" :key="item.productId"><strong>{{ item.productName }}</strong><br />单价 ¥{{ Number(item.unitPrice).toFixed(2) }} × {{ item.quantity }} · 小计 ¥{{ Number(item.lineAmount).toFixed(2) }}<span v-if="item.activityId"> · 活动 #{{ item.activityId }}</span></li></ul></section>

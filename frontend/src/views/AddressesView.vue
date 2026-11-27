@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onUnmounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElPopconfirm } from 'element-plus'
 import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/popconfirm/style/css'
 import { useAuthStore } from '../stores/auth.ts'
+import AddressRegionFields from '../components/AddressRegionFields.vue'
 import { addresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from '../api/checkout.ts'
-import { errorMessage, SessionChangedError } from '../api/http.ts'
+import { errorMessage, onSessionChange, SessionChangedError } from '../api/http.ts'
 import { canReconcileWrite, reconcileWrite } from '../utils/write-reconciliation.ts'
 import type { Address, AddressInput } from '../types/checkout.ts'
 
@@ -37,7 +39,7 @@ async function load() {
   finally { if (current === sequence) busy.value = false }
 }
 async function mutate(action: () => Promise<unknown>, matches: (data: Address[]) => boolean, message: string, clearForm = false, observed = message, showPopup = false) {
-  if (busy.value || saving.value || auth.busy) return
+  if (busy.value || saving.value || auth.status !== 'authenticated') return
   const current = ++operation
   saving.value = true
   error.value = ''
@@ -85,15 +87,18 @@ function save() {
   )
 }
 function remove(item: Address) {
-  if (!window.confirm(`删除「${item.recipientName}」的这条收货地址？`)) return
+  if (!list.value.some(row => row.id === item.id)) return
   void mutate(() => deleteAddress(item.id), snapshot => !snapshot.some(row => row.id === item.id),
     '地址已删除。', editing.value === item.id)
 }
-watch(() => auth.user?.id, () => {
-  operation++; sequence++; busy.value = false; loaded.value = false; saving.value = false; list.value = []; notice.value = ''; reset()
-}, { flush: 'sync' })
+function resetAddressBook() {
+  operation++; sequence++; busy.value = false; loaded.value = false; saving.value = false
+  list.value = []; notice.value = ''; error.value = ''; reset()
+}
+const stopSessionListener = onSessionChange(resetAddressBook)
+watch(() => auth.user?.id, resetAddressBook, { flush: 'sync' })
 watch(() => auth.status, status => { if (status === 'authenticated') void load() }, { immediate: true })
-onUnmounted(() => { sequence++; operation++ })
+onUnmounted(() => { sequence++; operation++; stopSessionListener() })
 </script>
 
 <template>
@@ -111,7 +116,12 @@ onUnmounted(() => { sequence++; operation++ })
       <div class="business-actions">
         <el-button :disabled="busy || saving || auth.busy" @click="edit(item)">编辑</el-button>
         <el-button :disabled="busy || saving || auth.busy || item.defaultAddress" @click="mutate(() => setDefaultAddress(item.id), snapshot => snapshot.some(row => row.id === item.id && row.defaultAddress), '默认地址已更新。')">设为默认</el-button>
-        <el-button :disabled="busy || saving || auth.busy" @click="remove(item)">删除</el-button>
+        <ElPopconfirm title="确定删除这条收货地址吗？" confirm-button-text="确认删除地址" cancel-button-text="保留地址"
+          :disabled="busy || saving || auth.busy" @confirm="remove(item)">
+          <template #reference>
+            <el-button :disabled="busy || saving || auth.busy">删除</el-button>
+          </template>
+        </ElPopconfirm>
       </div>
     </article>
   </div>
@@ -119,12 +129,11 @@ onUnmounted(() => { sequence++; operation++ })
     <h2>{{ editing === null ? '新增地址' : '编辑地址' }}</h2>
     <form @submit.prevent="save" novalidate>
       <fieldset :disabled="saving || auth.busy" class="business-fields">
-        <div class="field"><label for="recipientName">收货人</label><input id="recipientName" v-model="form.recipientName" maxlength="50" autocomplete="name" /></div>
-        <div class="field"><label for="phone">手机号</label><input id="phone" v-model="form.phone" maxlength="11" inputmode="tel" autocomplete="tel" /></div>
-        <div class="field"><label for="province">省份</label><input id="province" v-model="form.province" maxlength="50" /></div>
-        <div class="field"><label for="city">城市</label><input id="city" v-model="form.city" maxlength="50" /></div>
-        <div class="field"><label for="district">区县</label><input id="district" v-model="form.district" maxlength="50" /></div>
-        <div class="field"><label for="detailAddress">详细地址</label><input id="detailAddress" v-model="form.detailAddress" maxlength="200" autocomplete="street-address" /></div>
+        <div class="field"><label for="recipientName">收货人</label><el-input id="recipientName" v-model="form.recipientName" maxlength="50" autocomplete="name" /></div>
+        <div class="field"><label for="phone">手机号</label><el-input id="phone" v-model="form.phone" maxlength="11" inputmode="tel" autocomplete="tel" /></div>
+        <AddressRegionFields :key="editing ?? 'new'" v-model:province="form.province" v-model:city="form.city"
+          v-model:district="form.district" :disabled="saving || auth.busy" />
+        <div class="field"><label for="detailAddress">详细地址</label><el-input id="detailAddress" v-model="form.detailAddress" maxlength="200" autocomplete="street-address" /></div>
       </fieldset>
       <div class="business-actions"><el-button type="primary" native-type="submit" :loading="saving" :disabled="busy || auth.busy">保存地址</el-button><el-button v-if="editing !== null" :disabled="saving || auth.busy" @click="reset">取消编辑</el-button></div>
     </form>

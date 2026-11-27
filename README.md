@@ -33,7 +33,7 @@
 | 补强 3 · Docker Compose | 五服务从干净环境启动，跑通交易并验证重建后数据保留。 [Compose 说明](docs/learning/48-strengthening-compose.md#验收进度) |
 | 补强 15 · 发布与回滚 | 在确定的演示环境记录提交与迁移版本，演练发布、回滚、告警触发及恢复，留存持续运行证据。 [补强计划](docs/superpowers/plans/2026-11-23-project-strengthening.md#补强15版本关联发布回滚告警与持续运行) |
 
-最新规则库的固定题集和完整助手链路已有本地结果。真实上游适用新版规则的表现留待单独复评。 [RAG 评测](docs/learning/61-storefront-rag-corpus.md#实际检索结果)
+新版 13 篇规则已完成 DeepSeek Flash 真实上游复评，15 个固定场景自动断言通过，5 个预期文档引用全部命中。 [RAG 与真实模型复评](docs/learning/61-storefront-rag-corpus.md)
 
 ## 数据库初始化（首次准备）
 

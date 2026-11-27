@@ -11,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,6 +31,13 @@ public class CartController {
     @Operation(summary = "查询本人购物车", description = "仅返回当前登录用户的购物车。")
     public List<CartItemResponse> listItems(@AuthenticationPrincipal PlatformUserDetails user) {
         return service.listItems(user.getId());
+    }
+
+    @PostMapping
+    @Operation(summary = "累加本人购物车商品数量", description = "quantity 表示本次增加的数量。返回更新后的本人购物车项，超过可购库存、售罄或下架返回409。")
+    public CartItemResponse addItem(@AuthenticationPrincipal PlatformUserDetails user,
+                                    @Valid @RequestBody AddCartItemRequest request) {
+        return service.addItem(user.getId(), request.productId(), request.quantity());
     }
 
     @PutMapping("/{productId}")

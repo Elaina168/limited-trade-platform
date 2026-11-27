@@ -13,6 +13,9 @@ public interface ProductMapper {
     List<Product> findOnSaleProducts();
 
     List<Product> findAllProducts();
+    long countAdminProducts(@Param("categoryId") Long categoryId, @Param("keyword") String keyword, @Param("status") String status);
+    List<Product> pageAdminProducts(@Param("categoryId") Long categoryId, @Param("keyword") String keyword,
+                                    @Param("status") String status, @Param("offset") long offset, @Param("limit") int limit);
 
     Product findById(long id);
 

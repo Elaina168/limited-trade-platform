@@ -189,29 +189,6 @@ a:focus-visible, button:focus-visible { outline: 3px solid #9eb8ef; outline-offs
 .sidebar { overflow-y: auto; }
 @media (max-width: 640px) { .filter-bar > .admin-input { flex-basis: 100%; } }
 
-/* 第六阶段：纯文本聊天、流式草稿与实际来源。 */
-.chat-heading, .chat-message-heading, .chat-compose-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-.chat-heading .business-actions { margin: 0; }
-.chat-heading .page-title { margin-bottom: 0; }
-.chat-notice { color: #69778d; font-size: 13px; line-height: 1.8; }
-.chat-log { height: clamp(300px, 45svh, 620px); min-width: 0; overflow-y: auto; padding: 22px; border: 1px solid #e4e9f0; border-radius: 12px; background: #fff; }
-.chat-empty { text-align: center; padding: 55px 15px; color: #7b879a; line-height: 1.9; }
-.chat-empty h2 { font-size: 20px; color: #324960; }
-.chat-message { max-width: 94%; padding: 18px; margin-bottom: 20px; border-radius: 10px; background: #f4f6fa; overflow-wrap: anywhere; }
-.chat-message.user { margin-left: auto; background: #edf2fd; }
-.chat-message-heading { margin-bottom: 12px; font-size: 13px; flex-wrap: wrap; }
-.chat-message-heading .muted { font-size: 12px; }
-.chat-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.85; font-size: 14px; }
-.chat-sources { border-top: 1px solid #dce4ef; margin-top: 18px; padding-top: 12px; }
-.chat-sources summary { cursor: pointer; font-size: 13px; color: #345cbb; }
-.chat-source { padding: 15px 0; border-bottom: 1px solid #e0e6ef; }
-.chat-source strong { font-size: 13px; }
-.chat-source .muted { font-size: 12px; }
-.chat-composer { margin-top: 22px; }
-.chat-composer label { display: block; margin-bottom: 10px; font-size: 14px; }
-.chat-composer textarea { width: 100%; min-height: 100px; padding: 14px; resize: vertical; border: 1px solid #d4dce8; border-radius: 10px; font: inherit; font-size: 14px; line-height: 1.7; }
-.chat-compose-actions { margin-top: 10px; flex-wrap: wrap; }
-.chat-compose-actions .business-actions { margin: 0; }
-.chat-compose-actions .muted { font-size: 12px; }
-.chat-confirm { padding: 18px; border: 1px solid #e5c898; border-radius: 10px; background: #fff9ed; margin-bottom: 15px; }
-@media (max-width: 640px) { .chat-heading { align-items: flex-start; flex-wrap: wrap; } .chat-log { padding: 12px; } .chat-message { max-width: 100%; padding: 14px; } .chat-compose-actions .business-actions { margin-left: auto; } }
+.catalog-categories { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.catalog-categories .el-button { margin: 0; }
+.account-menu { display: inline-flex; gap: 8px; align-items: center; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }

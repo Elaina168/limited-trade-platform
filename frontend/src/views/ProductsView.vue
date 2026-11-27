@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue'
+import { useVisibilityRefresh } from '../composables/useVisibilityRefresh.ts'
 import { useAuthStore } from '../stores/auth.ts'
 import { categories, searchProducts } from '../api/catalog.ts'
 import { errorMessage, SessionChangedError } from '../api/http.ts'
@@ -9,38 +10,42 @@ const auth = useAuthStore()
 const keyword = ref('')
 const categoryId = ref('')
 const appliedKeyword = ref('')
-const appliedCategory = ref('')
 const categoryList = ref<Category[]>([])
 const result = ref<ProductPage | null>(null)
 const page = ref(1)
 const busy = ref(false)
 const error = ref('')
 let sequence = 0
-async function load() {
+let refreshing = false
+async function load(silent = false) {
   const current = ++sequence
-  busy.value = true
-  error.value = ''
-  result.value = null
+  refreshing = true
+  if (!silent) { busy.value = true; error.value = '' }
   try {
-    const [list, data] = await Promise.all([categories(), searchProducts(page.value, appliedKeyword.value, appliedCategory.value)])
+    const [list, data] = await Promise.all([categories(), searchProducts(page.value, appliedKeyword.value, categoryId.value)])
     if (current !== sequence) return
     categoryList.value = list
     result.value = data
+    error.value = ''
   } catch (cause) {
-    if (current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause)
-  } finally { if (current === sequence) busy.value = false }
+    if (!silent && current === sequence && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause)
+  } finally { if (current === sequence) { busy.value = false; refreshing = false } }
 }
 function search() {
   appliedKeyword.value = keyword.value
-  appliedCategory.value = categoryId.value
   page.value = 1
   void load()
+}
+function chooseCategory(id: string) {
+  categoryId.value = id
+  search()
 }
 function changePage(delta: number) { page.value += delta; void load() }
 // 身份操作结束后，即使还是同一账号，也要补载已被作废的旧请求。
 watch([() => auth.user?.id, () => auth.status], () => {
-  if (auth.status === 'authenticated' || auth.status === 'anonymous') void load()
+  if (!result.value && !refreshing && (auth.status === 'authenticated' || auth.status === 'anonymous')) void load()
 }, { immediate: true })
+useVisibilityRefresh(() => { void load(!!result.value) }, () => refreshing || auth.busy)
 onUnmounted(() => { sequence++ })
 </script>
 
@@ -49,13 +54,17 @@ onUnmounted(() => { sequence++ })
   <h1 class="page-title">发现好物</h1>
   <p class="page-description">按分类和名称查找当前在售商品。</p>
   <form class="filter-bar" @submit.prevent="search">
-    <el-input v-model="keyword" aria-label="商品名称" placeholder="搜索商品名称" maxlength="100" clearable />
-    <select v-model="categoryId" aria-label="商品分类"><option value="">全部分类</option><option v-for="item in categoryList" :key="item.id" :value="String(item.id)">{{ item.name }}</option></select>
+    <el-input v-model="keyword" aria-label="商品名称" placeholder="搜索商品名称" maxlength="100" clearable @clear="search" />
     <el-button type="primary" native-type="submit">搜索</el-button>
   </form>
-  <p v-if="busy" role="status">正在加载商品…</p>
-  <div v-else-if="error" role="alert"><p class="form-error">{{ error }}</p><el-button @click="load">重试</el-button></div>
-  <template v-else-if="result">
+  <div class="catalog-categories" role="group" aria-label="商品分类">
+    <el-button round :type="categoryId === '' ? 'primary' : 'default'" :aria-pressed="categoryId === ''" @click="chooseCategory('')">全部分类</el-button>
+    <el-button v-for="item in categoryList" :key="item.id" round
+      :type="categoryId === String(item.id) ? 'primary' : 'default'" :aria-pressed="categoryId === String(item.id)" @click="chooseCategory(String(item.id))">{{ item.name }}</el-button>
+  </div>
+  <p v-if="busy && !result" role="status">正在加载商品…</p>
+  <div v-else-if="error" role="alert"><p class="form-error">{{ error }}</p><el-button @click="load()">重试</el-button></div>
+  <template v-if="result">
     <p class="muted">共 {{ result.total }} 件商品</p>
     <p v-if="!result.items.length" class="empty-state">没有找到符合条件的商品，试试其他名称或分类。</p>
     <div class="market-grid">

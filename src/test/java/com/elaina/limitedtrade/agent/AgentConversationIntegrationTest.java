@@ -166,8 +166,15 @@ class AgentConversationIntegrationTest {
     }
 
     @Test void visibleHistoryRetainsFiftyCompletedTurnsIndependentlyFromModelContext() {
-        var id = service.create(userId).conversationId();
-        for (int i = 0; i < 52; i++) service.chat(userId, id, "问题" + i);
+        var created = service.create(userId);
+        var id = created.conversationId();
+        assertThat(created.title()).isEqualTo("新对话");
+        assertThat(service.list(userId, 1, 10).items().getFirst().title()).isEqualTo("新对话");
+        String title = "问".repeat(21) + "😀";
+        service.chat(userId, id, title + "后续");
+        for (int i = 1; i < 52; i++) service.chat(userId, id, "问题" + i);
+        assertThat(service.list(userId, 1, 10).items().getFirst().title()).isEqualTo(title);
+        assertThat(service.list(otherId, 1, 10).items()).isEmpty();
         var turns = service.readHistory(userId, id).turns();
         assertThat(turns).hasSize(50);
         assertThat(turns.getFirst().question()).isEqualTo("问题2");
@@ -182,6 +189,20 @@ class AgentConversationIntegrationTest {
         var visible = service.readHistory(userId, id).turns().getLast();
         assertThat(visible.answer()).isEqualTo("最终回答");
         assertThat(visible.sources()).extracting(TradeRule::id).containsExactly("公开规则");
+        service.clear(userId, id);
+        assertThat(service.list(userId, 1, 10).items().getFirst().title()).isEqualTo("新对话");
+    }
+
+    @Test void legacyVisibleTurnProvidesTitleAndEmptyOrders() {
+        var id = service.create(userId).conversationId();
+        service.chat(userId, id, "原来的问题");
+        jdbc.update("""
+                UPDATE agent_conversation_visible_turn
+                SET display_json=JSON_REMOVE(display_json, '$.title', '$.orders')
+                WHERE conversation_id=?
+                """, id);
+        assertThat(service.list(userId, 1, 10).items().getFirst().title()).isEqualTo("原来的问题");
+        assertThat(service.readHistory(userId, id).turns().getFirst().orders()).isEmpty();
     }
 
     @Test void historyReadsCommittedSnapshotAndClearOrDeleteInvalidatesPendingGeneration() {

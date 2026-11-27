@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -43,6 +45,56 @@ class AdminProductApiTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Test
+    void adminProductPagesKeepDescendingOrderAndIncludeOffSaleItems() throws Exception {
+        mockMvc.perform(get("/api/admin/products/page"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(1)).andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.total").value(3)).andExpect(jsonPath("$.items.length()").value(3))
+                .andExpect(jsonPath("$.items[0].id").value(9003))
+                .andExpect(jsonPath("$.items[0].status").value("OFF_SALE"));
+        mockMvc.perform(get("/api/admin/products/page").param("page", "2").param("size", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].id").value(9002));
+        mockMvc.perform(get("/api/admin/products"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3));
+    }
+
+    @Test
+    @Sql({"/sql/category-test-data.sql", "/sql/catalog-product-data.sql"})
+    void keywordCategoryAndStatusFilterBothCountAndItems() throws Exception {
+        mockMvc.perform(get("/api/admin/products/page").param("keyword", " 键盘 ")
+                        .param("categoryId", "12001").param("status", "OFF_SALE"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].id").value(10005));
+        mockMvc.perform(get("/api/admin/products/page").param("keyword", "%"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(10006));
+        mockMvc.perform(get("/api/admin/products/page").param("keyword", "").param("categoryId", "").param("status", ""))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(10));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"page,0", "size,101", "categoryId,0", "status,on_sale"})
+    void rejectsInvalidPageParameters(String parameter, String value) throws Exception {
+        mockMvc.perform(get("/api/admin/products/page").param(parameter, value)).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adminCanReadOffSaleProductById() throws Exception {
+        mockMvc.perform(get("/api/admin/products/9003")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(9003)).andExpect(jsonPath("$.status").value("OFF_SALE"));
+        mockMvc.perform(get("/api/admin/products/999999")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void adminProductReadsRequireAdmin() throws Exception {
+        mockMvc.perform(get("/api/admin/products/page").with(anonymous())).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/products/page")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/admin/products/9003")).andExpect(status().isForbidden());
+    }
 
     @Test
     void createProductPersistsItWithGeneratedIdAndOffSaleStatus() throws Exception {

@@ -2,6 +2,7 @@ import { readJson, writeJson } from './http.ts'
 import type { Address, AddressInput, CartItem, Order } from '../types/checkout.ts'
 
 export const cartItems = () => readJson<CartItem[]>('/api/cart/items')
+export const addCartQuantity = (productId: number, delta: number) => writeJson<CartItem>('/api/cart/items', 'POST', { productId, quantity: delta })
 export const setCartQuantity = (id: number, quantity: number) => writeJson(`/api/cart/items/${id}`, 'PUT', { quantity })
 export const removeCartItem = (id: number) => writeJson(`/api/cart/items/${id}`, 'DELETE')
 export const addresses = () => readJson<Address[]>('/api/addresses')

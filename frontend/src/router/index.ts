@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth.ts'
+import { safeRedirect } from '../utils/safe-redirect.ts'
 import AppLayout from '../layouts/AppLayout.vue'
 
 declare module 'vue-router' {
@@ -32,7 +33,8 @@ export const router = createRouter({
         { path: 'products/:productId', name: 'product-detail', component: () => import('../views/ProductDetailView.vue'), meta: { title: '商品详情' } },
         { path: 'activities', name: 'activities', component: () => import('../views/ActivitiesView.vue'), meta: { title: '限量活动' } },
         { path: 'activities/:id', name: 'activity-detail', component: () => import('../views/ActivityDetailView.vue'), meta: { title: '活动详情' } },
-        { path: '', name: 'home', component: () => import('../views/HomeView.vue'), meta: { title: '账号概览', requiresAuth: true } },
+        { path: '', name: 'home', component: () => import('../views/HomeView.vue'), meta: { title: '商城首页' } },
+        { path: 'account', name: 'account', component: () => import('../views/AccountView.vue'), meta: { title: '账号概览', requiresAuth: true } },
         { path: 'admin', name: 'admin', component: () => import('../views/AdminHomeView.vue'), meta: { title: '管理中心', requiresAdmin: true, requiresAuth: true } },
         { path: 'forbidden', name: 'forbidden', component: () => import('../views/ForbiddenView.vue'), meta: { title: '访问受限', requiresAuth: true } },
       ],
@@ -46,9 +48,11 @@ router.beforeEach(async to => {
   const auth = useAuthStore()
   await auth.restore()
   if (auth.status === 'failed') return { name: 'unavailable', query: { returnTo: to.fullPath } }
-  if (to.meta.requiresAuth && !auth.user) return { name: 'login' }
+  if (to.meta.requiresAuth && !auth.user) return { name: 'login', query: { redirect: to.fullPath } }
   if (to.meta.requiresAdmin && !auth.isAdmin) return { name: 'forbidden' }
-  if ((to.name === 'login' || to.name === 'register') && auth.user) return { name: auth.isAdmin ? 'admin' : 'products' }
+  if ((to.name === 'login' || to.name === 'register') && auth.user) {
+    return safeRedirect(to.query.redirect) ?? { name: auth.isAdmin ? 'admin' : 'products' }
+  }
   return true
 })
 

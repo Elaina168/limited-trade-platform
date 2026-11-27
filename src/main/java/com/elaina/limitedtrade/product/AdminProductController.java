@@ -4,7 +4,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "商品管理")
@@ -31,6 +35,23 @@ public class AdminProductController {
     @Operation(summary = "查询全部商品（管理员）", description = "包含上架和下架商品。")
     public List<Product> listProducts() {
         return productService.listAdminProducts();
+    }
+
+    @GetMapping("/page")
+    @Operation(summary = "分页搜索商品（管理员）", description = "page默认1，size默认20且最多100，支持名称、分类和上下架状态筛选。")
+    public AdminProductPage pageProducts(
+            @RequestParam(defaultValue = "1") @Positive int page,
+            @RequestParam(defaultValue = "20") @Positive @Max(100) int size,
+            @RequestParam(required = false) @Size(max = 100) String keyword,
+            @RequestParam(required = false) @Positive Long categoryId,
+            @RequestParam(required = false) @Pattern(regexp = "(?:ON_SALE|OFF_SALE)?") String status) {
+        return productService.pageAdminProducts(page, size, keyword, categoryId, status);
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "查询单个商品（管理员）", description = "支持读取下架商品，商品不存在返回404。")
+    public Product getProduct(@PathVariable @Positive long id) {
+        return productService.getAdminProduct(id);
     }
 
     @PostMapping

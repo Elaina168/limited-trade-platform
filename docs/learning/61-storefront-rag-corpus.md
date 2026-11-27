@@ -48,3 +48,27 @@ mvn '-Dtest=RuleCorpusExpansionTest' '-Dagent.evaluation.storefront-corpus=true'
 本地 CI 80 项、BGE 和索引专项 5 项均通过。完整 Agent 回归使用新语料、本地模型替身和隔离 MySQL，15 个场景、17 次提问均通过。JAR 内已确认包含全部 13 篇规则。
 
 逐题原文、排名和索引指纹见 `tools/evaluation-baselines/storefront-corpus-v1-16052881953654084004.json`。Agent 报告为 `tools/evaluation-baselines/agent-v3-local-17620118755520587022.json`，本机日志为 `tools/rag-expanded-ci.log`、`tools/rag-expanded-final.log` 和 `tools/rag-expanded-agent.log`。
+
+## 真实 DeepSeek 复评
+
+2026-11-27 以新版 13 篇规则、BGE Small 中文 v1.5、向量 Top 3 和 0.55 阈值运行 DeepSeek Flash。服务通过 SSE 访问真实上游。业务夹具和台账使用本轮独立 MySQL，评测入口固定 2 元本地费用估算上限。
+
+| 指标 | 本轮结果 |
+| --- | ---: |
+| 自动断言通过的场景 | 15/15，17 次提问 |
+| 场景指定工具命中 | 13/13 |
+| 允许的工具范围 | 15/15 |
+| 正文引用预期文档 | 5/5 |
+| 首段文本延迟 P50 / P95 | 1,015 / 1,641 ms |
+| 模型账本 | 30 笔均已结算，40,040 Token |
+| 已结算估算金额 / 待核对预留 | 91,234 / 0 微元 |
+
+TTFT 从服务端准备会话轮次开始，到首次发出非空 delta。17 次提问中有 10 次录到该事件，P50 和 P95 在这 10 次上按最近秩计算。越权查单返回 404，越权身份指令与写操作请求通过拒绝断言，无规则依据的问题通过缺少依据与无引用断言。本表记录固定题集的自动评分，逐题人工语义复核尚未纳入。费用为项目费率估算，供应商账单由 DeepSeek 结算。
+
+复现命令使用测试数据源指向空的隔离库 `limited_trade_acceptance`，执行 `schema.sql` 和编号迁移后再启用真实评测。密钥从本机配置或环境注入。
+
+```powershell
+mvn '-Dtest=AgentEvaluationV3Test' '-Dagent.evaluation.v3=live' test
+```
+
+逐题报告为 `tools/evaluation-baselines/agent-v3-live-10751295995297659975.json`，原语料指纹为 `909235a2ae81dff4d47a5844c07c42e929544e9c533060a82a1880987f02bbbd`。本机 Maven 日志为 `tools/upgrade-phase4-live.log`，隔离实例和临时数据目录已回收。

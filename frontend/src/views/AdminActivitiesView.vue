@@ -27,11 +27,11 @@ function save() {
   <el-button :loading="busy" :disabled="saving" @click="load">刷新活动</el-button>
   <section class="market-card address-editor"><h2>新增活动</h2><form @submit.prevent="save" novalidate>
     <fieldset class="business-fields" :disabled="blocked">
-      <div class="field"><label for="activity-product">活动商品</label><select id="activity-product" v-model="form.productId"><option value="">请选择商品</option><option v-for="item in data?.products" :key="item.id" :value="String(item.id)">{{ item.name }}{{ item.status === 'ON_SALE' ? '' : '（已下架）' }}</option></select></div>
-      <div class="field"><label for="activity-name">活动名称</label><input id="activity-name" v-model="form.name" maxlength="100" /></div>
-      <div class="field"><label for="activity-quantity">活动名额</label><input id="activity-quantity" v-model.number="form.totalQuantity" type="number" min="1" max="2147483647" step="1" /></div>
-      <div class="field"><label for="activity-start">活动开始时间</label><input id="activity-start" v-model="form.startsAt" type="datetime-local" step="1" /></div>
-      <div class="field"><label for="activity-end">活动结束时间</label><input id="activity-end" v-model="form.endsAt" type="datetime-local" step="1" /></div>
+      <div class="field"><label for="activity-product">活动商品</label><el-select id="activity-product" v-model="form.productId" aria-label="活动商品" placeholder="请选择商品" :disabled="blocked" filterable><el-option v-for="item in data?.products" :key="item.id" :value="String(item.id)" :label="item.name + (item.status === 'ON_SALE' ? '' : '（已下架）')" /></el-select></div>
+      <div class="field"><label for="activity-name">活动名称</label><el-input id="activity-name" v-model="form.name" maxlength="100" :disabled="blocked" /></div>
+      <div class="field"><label for="activity-quantity">活动名额</label><el-input-number id="activity-quantity" v-model="form.totalQuantity" aria-label="活动名额" :min="1" :max="2147483647" :step="1" :disabled="blocked" /></div>
+      <div class="field"><label for="activity-start">活动开始时间</label><el-date-picker id="activity-start" v-model="form.startsAt" aria-label="活动开始时间" type="datetime" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DDTHH:mm:ss" :disabled="blocked" /></div>
+      <div class="field"><label for="activity-end">活动结束时间</label><el-date-picker id="activity-end" v-model="form.endsAt" aria-label="活动结束时间" type="datetime" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DDTHH:mm:ss" :disabled="blocked" /></div>
     </fieldset><el-button type="primary" native-type="submit" :disabled="blocked" :loading="saving">创建活动</el-button>
   </form></section>
   <p v-if="busy && !data" role="status">正在加载活动…</p><p v-else-if="data && !data.activities.length" class="empty-state">暂无活动。</p>

@@ -13,8 +13,28 @@ test('order list sends correct page size and optional status', async () => {
   globalThis.fetch = async input => { paths.push(String(input)); return json({ page: 2, size: 10, total: 11, items: [] }) }
   await listOrders(2, 'PAID')
   await listOrders(1, '')
+  await listOrders(1, 'CANCELED_OR_CLOSED')
   assert.deepEqual(Object.fromEntries(new URL(paths[0]!, 'http://localhost').searchParams), { page: '2', size: '10', status: 'PAID' })
   assert.equal(new URL(paths[1]!, 'http://localhost').searchParams.has('status'), false)
+  assert.equal(new URL(paths[2]!, 'http://localhost').searchParams.get('status'), 'CANCELED_OR_CLOSED')
+})
+
+test('shared order action reconciles a lost write using only an authoritative GET', async () => {
+  const { submitOrderAction } = await import('../src/api/orders.ts')
+  const visits: string[] = []
+  globalThis.fetch = async (input, options) => {
+    const path = String(input)
+    visits.push(`${options?.method ?? 'GET'} ${path}`)
+    if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'current' })
+    if (options?.method === 'POST') throw new TypeError('连接在写入后断开')
+    return json({ id: 91, status: 'SHIPPED' })
+  }
+  let checking = false
+  const outcome = await submitOrderAction(91, 'pay', () => true, () => { checking = true })
+  assert.equal(checking, true)
+  assert.equal(outcome?.snapshot?.status, 'SHIPPED')
+  assert.equal(outcome?.notice, '模拟支付成功。')
+  assert.deepEqual(visits, ['GET /api/auth/csrf', 'POST /api/orders/91/pay', 'GET /api/orders/91'])
 })
 
 test('order actions use fresh CSRF and order-specific POST endpoints', async () => {

@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +55,52 @@ class CartApiTest {
         assertEquals(5, jdbc.queryForObject("SELECT stock FROM product WHERE id=10101", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM trade_order", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM order_timeout_outbox", Integer.class));
+    }
+
+    @Test
+    void addCreatesAndIncrementsOnlyTheAuthenticatedBuyersCart() throws Exception {
+        jdbc.update("INSERT INTO cart_item(user_id,product_id,quantity) VALUES (7902,10101,1)");
+        mvc.perform(add(10101, 2).with(buyer(7901)).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productId").value(10101))
+                .andExpect(jsonPath("$.quantity").value(2))
+                .andExpect(jsonPath("$.stock").value(5));
+        mvc.perform(add(10101, 3).with(buyer(7901)).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(5));
+        assertEquals(2, count());
+        assertEquals(5, quantity(7901, 10101));
+        assertEquals(1, quantity(7902, 10101));
+        assertEquals(5, jdbc.queryForObject("SELECT stock FROM product WHERE id=10101", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM trade_order", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM order_timeout_outbox", Integer.class));
+    }
+
+    @Test
+    void addAboveStockOrIntegerRangeLeavesTheCartUnchanged() throws Exception {
+        jdbc.update("INSERT INTO cart_item(user_id,product_id,quantity) VALUES (7901,10101,4)");
+        for (int delta : new int[] {2, Integer.MAX_VALUE}) {
+            mvc.perform(add(10101, delta).with(buyer(7901)).with(csrf()))
+                    .andExpect(status().isConflict());
+            assertEquals(4, quantity(7901, 10101));
+        }
+    }
+
+    @Test
+    void addRejectsMissingOffSaleAndSoldOutProducts() throws Exception {
+        mvc.perform(add(10999, 1).with(buyer(7901)).with(csrf())).andExpect(status().isNotFound());
+        mvc.perform(add(10102, 1).with(buyer(7901)).with(csrf())).andExpect(status().isConflict());
+        mvc.perform(add(10103, 1).with(buyer(7901)).with(csrf())).andExpect(status().isConflict());
+        assertEquals(0, count());
+    }
+
+    @Test
+    void addRequiresAuthenticationCsrfAndPositiveInput() throws Exception {
+        mvc.perform(add(10101, 1).with(csrf())).andExpect(status().isUnauthorized());
+        mvc.perform(add(10101, 1).with(buyer(7901))).andExpect(status().isForbidden());
+        mvc.perform(add(10101, 0).with(buyer(7901)).with(csrf())).andExpect(status().isBadRequest());
+        mvc.perform(add(0, 1).with(buyer(7901)).with(csrf())).andExpect(status().isBadRequest());
+        assertEquals(0, count());
     }
 
     @Test
@@ -188,6 +235,11 @@ class CartApiTest {
         mvc.perform(get("/api/cart/items").with(admin)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].quantity").value(2));
         assertEquals(7, quantity(7902, 10101));
+    }
+
+    private MockHttpServletRequestBuilder add(long productId, int delta) {
+        return post("/api/cart/items").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productId\":" + productId + ",\"quantity\":" + delta + "}");
     }
 
     private int count() { return jdbc.queryForObject("SELECT COUNT(*) FROM cart_item", Integer.class); }

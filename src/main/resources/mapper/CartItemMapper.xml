@@ -8,6 +8,12 @@
         ORDER BY c.product_id ASC
     </select>
 
+    <select id="findQuantity" resultType="java.lang.Integer">
+        SELECT quantity
+        FROM cart_item
+        WHERE user_id=#{userId} AND product_id=#{productId}
+    </select>
+
     <insert id="setQuantity">
         INSERT INTO cart_item (user_id, product_id, quantity)
         VALUES (#{userId}, #{productId}, #{quantity})

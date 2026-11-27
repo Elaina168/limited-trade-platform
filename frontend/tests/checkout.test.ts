@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '../src/stores/auth.ts'
 import { advanceSession, HttpError } from '../src/api/http.ts'
 
@@ -136,4 +136,29 @@ test('other account cannot confirm the previous account saved intent', async () 
   checkout.confirmKnownOrder({ requestId } as import('../src/types/checkout.ts').Order)
   auth.user = { id: 31, username: 'buyer', role: 'USER' }
   assert.equal(checkout.pending!.requestId, requestId)
+})
+
+
+test('购物车角标统计总件数且切换账号后不接收旧快照', async () => {
+  const { useCartStore } = await import('../src/stores/cart.ts')
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const auth = useAuthStore()
+  auth.user = { id: 101, username: 'a', role: 'USER' }
+  const cart = useCartStore()
+  cart.replace([{ productId: 1, name: '甲', quantity: 2, stock: 5, price: 1, status: 'ON_SALE' },
+    { productId: 2, name: '乙', quantity: 3, stock: 5, price: 1, status: 'ON_SALE' }])
+  assert.equal(cart.totalCount, 5)
+  let complete!: (value: Response) => void
+  globalThis.fetch = () => new Promise(resolve => { complete = resolve })
+  const refreshed = cart.refresh()
+  try {
+    advanceSession()
+    auth.user = { id: 102, username: 'b', role: 'USER' }
+    assert.equal(cart.totalCount, 0)
+    complete(Response.json([{ productId: 1, quantity: 5 }]))
+    await refreshed
+    assert.equal(cart.totalCount, 0)
+    assert.deepEqual(cart.items, [])
+  } finally { disposePinia(pinia) }
 })
