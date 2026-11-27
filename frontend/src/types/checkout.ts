@@ -8,10 +8,21 @@ export interface Address extends AddressInput { id: number; defaultAddress: bool
 export interface DirectPurchase {
   productId: number; quantity: number; activityId: number | null; userCouponId: number | null; addressId: number
 }
+export interface SeckillPurchase {
+  productId: number; quantity: number; userCouponId: number | null; addressId: number
+}
 export interface CartCheckout { productIds: number[]; addressId: number }
 export type OrderIntent =
   | { path: '/api/orders'; data: DirectPurchase; requestId: string }
   | { path: '/api/orders/checkout'; data: CartCheckout; requestId: string }
+  | { path: `/api/activities/${number}/seckill`; data: SeckillPurchase; requestId: string; queued?: boolean }
+export interface SeckillStatusResponse {
+  requestId: string
+  status: 'QUEUED' | 'CREATED' | 'FAILED'
+  orderId: number | null
+  order: Order | null
+  message: string
+}
 export interface OrderItem {
   productId: number; productName: string; unitPrice: number; quantity: number; lineAmount: number; activityId: number | null
 }

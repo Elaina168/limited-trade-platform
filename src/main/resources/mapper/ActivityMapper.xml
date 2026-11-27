@@ -4,22 +4,22 @@
 <mapper namespace="com.elaina.limitedtrade.activity.ActivityMapper">
 
     <insert id="insertActivity" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO activity (product_id, name, total_quantity, remaining_quantity, starts_at, ends_at)
-        VALUES (#{productId}, #{name}, #{totalQuantity}, #{remainingQuantity}, #{startsAt}, #{endsAt})
+        INSERT INTO activity (product_id, name, total_quantity, remaining_quantity, per_user_limit, starts_at, ends_at)
+        VALUES (#{productId}, #{name}, #{totalQuantity}, #{remainingQuantity}, #{perUserLimit}, #{startsAt}, #{endsAt})
     </insert>
 
     <select id="findAll" resultType="com.elaina.limitedtrade.activity.Activity">
-        SELECT id, product_id, name, total_quantity, remaining_quantity, starts_at, ends_at
+        SELECT id, product_id, name, total_quantity, remaining_quantity, per_user_limit, starts_at, ends_at
         FROM activity ORDER BY id DESC
     </select>
 
     <select id="findById" resultType="com.elaina.limitedtrade.activity.Activity">
-        SELECT id, product_id, name, total_quantity, remaining_quantity, starts_at, ends_at
+        SELECT id, product_id, name, total_quantity, remaining_quantity, per_user_limit, starts_at, ends_at
         FROM activity WHERE id = #{id}
     </select>
 
     <select id="findByIdForUpdate" resultType="com.elaina.limitedtrade.activity.Activity">
-        SELECT id, product_id, name, total_quantity, remaining_quantity, starts_at, ends_at
+        SELECT id, product_id, name, total_quantity, remaining_quantity, per_user_limit, starts_at, ends_at
         FROM activity WHERE id = #{id}
         FOR UPDATE
     </select>

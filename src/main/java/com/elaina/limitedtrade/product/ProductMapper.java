@@ -34,4 +34,30 @@ public interface ProductMapper {
     List<ProductSearchItem> searchProducts(@Param("categoryId") Long categoryId,
                                           @Param("keyword") String keyword,
                                           @Param("offset") long offset, @Param("limit") int limit);
+
+    long countFilteredSearchProducts(@Param("categoryId") Long categoryId,
+                                     @Param("keyword") String keyword,
+                                     @Param("minPrice") java.math.BigDecimal minPrice,
+                                     @Param("maxPrice") java.math.BigDecimal maxPrice,
+                                     @Param("inStockOnly") boolean inStockOnly);
+
+    List<ProductSearchItem> searchFilteredProducts(@Param("categoryId") Long categoryId,
+                                                   @Param("keyword") String keyword,
+                                                   @Param("minPrice") java.math.BigDecimal minPrice,
+                                                   @Param("maxPrice") java.math.BigDecimal maxPrice,
+                                                   @Param("inStockOnly") boolean inStockOnly,
+                                                   @Param("sort") String sort,
+                                                   @Param("offset") long offset,
+                                                   @Param("limit") int limit);
+
+    List<CategoryFacet> aggregateSearchCategories(@Param("keyword") String keyword,
+                                                  @Param("minPrice") java.math.BigDecimal minPrice,
+                                                  @Param("maxPrice") java.math.BigDecimal maxPrice,
+                                                  @Param("inStockOnly") boolean inStockOnly);
+
+    List<String> suggestProductNames(@Param("keyword") String keyword, @Param("limit") int limit);
+
+    List<ProductSearchItem> findAllOnSaleSearchItems();
+
+    List<ProductSearchItem> findSearchItemsByIds(@Param("ids") List<Long> ids);
 }

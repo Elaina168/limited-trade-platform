@@ -35,7 +35,9 @@ public class OrderTimeoutRabbitConfiguration {
 
     @Bean
     Jackson2JsonMessageConverter orderTimeoutMessageConverter(ObjectMapper mapper) {
-        var converter = new Jackson2JsonMessageConverter(mapper, "com.elaina.limitedtrade.order.message");
+        var converter = new Jackson2JsonMessageConverter(mapper,
+                "com.elaina.limitedtrade.order.message",
+                "com.elaina.limitedtrade.seckill");
         // 若外部声明类型头，必须经过受信任类型检查，不能被方法参数推断覆盖。
         converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.TYPE_ID);
         return converter;

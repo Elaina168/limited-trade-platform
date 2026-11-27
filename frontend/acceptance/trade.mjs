@@ -85,7 +85,7 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
   await button(buyer, '搜索').click()
   await buyer.getByText('没有找到符合条件的商品，试试其他名称或分类。', exact).waitFor()
   await buyer.getByLabel('商品名称', exact).hover()
-  await buyer.locator('.el-input__clear').click()
+  await buyer.locator('.search-box-wrap .el-input__clear').click()
   await heading(buyer, fixture.product)
   const focusRead = buyer.waitForResponse(r => new URL(r.url()).pathname === '/api/products/search')
   await buyer.evaluate(() => window.dispatchEvent(new Event('focus')))
@@ -338,14 +338,44 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
   await activityDrawer.locator('.el-select__selected-item').filter({ hasText: '不使用优惠券' }).waitFor()
   await coupon.click()
   await activityDrawer.getByRole('option', { name: /验收最优券/ }).click()
-  const [activityOrder] = await Promise.all([
-    buyer.waitForResponse(r => r.url() === base + '/api/orders' && r.request().method() === 'POST'),
+  const seckillUrl = base + '/api/activities/' + active + '/seckill'
+  const queuedSeckill = Promise.withResolvers()
+  await buyer.route(seckillUrl, async route => {
+    try {
+      const request = route.request()
+      const headers = await request.allHeaders()
+      const response = await fetch(backend + '/api/activities/' + active + '/seckill', {
+        method: 'POST',
+        body: request.postData(),
+        headers: {
+          'content-type': headers['content-type'],
+          'x-csrf-token': headers['x-csrf-token'],
+          cookie: headers.cookie,
+        },
+        signal: AbortSignal.timeout(8000),
+      })
+      const payload = await response.json()
+      assert.equal(response.status, 201)
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ requestId: payload.requestId, status: 'QUEUED', orderId: null, order: null, message: '已锁定抢购名额，正在生成订单…' }),
+      })
+      queuedSeckill.resolve({ payload, request: request.postDataJSON() })
+    } catch (error) {
+      queuedSeckill.reject(error)
+    }
+  }, { times: 1 })
+  const [seckillSubmitted, polledResult] = await Promise.all([
+    queuedSeckill.promise,
+    buyer.waitForResponse(r => new URL(r.url()).pathname.startsWith('/api/activities/seckill/result/') && r.status() === 200),
     button(activityDrawer, '提交订单').click(),
   ])
-  assert.equal(activityOrder.status(), 201)
-  const created = await activityOrder.json()
+  const polledJson = await polledResult.json()
+  assert.equal(polledJson.status, 'CREATED')
+  const created = polledJson.order
   assert.equal(created.discountAmount, 5)
-  assert.equal(activityOrder.request().postDataJSON().userCouponId, Number(best))
+  assert.equal(seckillSubmitted.request.userCouponId, Number(best))
   await buyer.waitForURL(base + '/orders/' + created.id + '?justCreated=1')
   await button(buyer, '立即模拟支付').waitFor()
   await buyer.getByText(/^支付剩余 /).waitFor()

@@ -98,4 +98,92 @@
         <include refid="searchConditions"/>
         ORDER BY p.id ASC LIMIT #{limit} OFFSET #{offset}
     </select>
+
+    <sql id="filteredSearchFilters">
+        WHERE p.status = 'ON_SALE'
+        <if test="categoryId != null">
+            AND p.category_id = #{categoryId}
+        </if>
+        <if test="keyword != null">
+            AND p.name LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+        </if>
+        <if test="minPrice != null">
+            AND p.price &gt;= #{minPrice}
+        </if>
+        <if test="maxPrice != null">
+            AND p.price &lt;= #{maxPrice}
+        </if>
+        <if test="inStockOnly">
+            AND p.stock &gt; 0
+        </if>
+    </sql>
+
+    <select id="countFilteredSearchProducts" resultType="long">
+        SELECT COUNT(*) FROM product p
+        <include refid="filteredSearchFilters"/>
+    </select>
+
+    <select id="searchFilteredProducts" resultType="com.elaina.limitedtrade.product.ProductSearchItem">
+        SELECT p.id, p.name, p.price, p.stock, p.status, p.category_id, c.name AS category_name
+        FROM product p LEFT JOIN product_category c ON c.id = p.category_id
+        <include refid="filteredSearchFilters"/>
+        <choose>
+            <when test="sort == 'price_asc'">
+                ORDER BY p.price ASC, p.id ASC
+            </when>
+            <when test="sort == 'price_desc'">
+                ORDER BY p.price DESC, p.id ASC
+            </when>
+            <otherwise>
+                ORDER BY p.id ASC
+            </otherwise>
+        </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="aggregateSearchCategories" resultType="com.elaina.limitedtrade.product.CategoryFacet">
+        SELECT p.category_id AS categoryId, c.name AS categoryName, COUNT(*) AS count
+        FROM product p LEFT JOIN product_category c ON c.id = p.category_id
+        WHERE p.status = 'ON_SALE'
+        <if test="keyword != null">
+            AND p.name LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+        </if>
+        <if test="minPrice != null">
+            AND p.price &gt;= #{minPrice}
+        </if>
+        <if test="maxPrice != null">
+            AND p.price &lt;= #{maxPrice}
+        </if>
+        <if test="inStockOnly">
+            AND p.stock &gt; 0
+        </if>
+        GROUP BY p.category_id, c.name
+        ORDER BY count DESC, p.category_id ASC
+    </select>
+
+    <select id="suggestProductNames" resultType="string">
+        SELECT p.name
+        FROM product p
+        WHERE p.status = 'ON_SALE'
+          AND p.name LIKE CONCAT('%', #{keyword}, '%') ESCAPE '!'
+        GROUP BY p.name
+        ORDER BY CASE WHEN p.name LIKE CONCAT(#{keyword}, '%') ESCAPE '!' THEN 0 ELSE 1 END, MIN(p.id) ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findAllOnSaleSearchItems" resultType="com.elaina.limitedtrade.product.ProductSearchItem">
+        SELECT p.id, p.name, p.price, p.stock, p.status, p.category_id, c.name AS category_name
+        FROM product p LEFT JOIN product_category c ON c.id = p.category_id
+        WHERE p.status = 'ON_SALE'
+        ORDER BY p.id ASC
+    </select>
+
+    <select id="findSearchItemsByIds" resultType="com.elaina.limitedtrade.product.ProductSearchItem">
+        SELECT p.id, p.name, p.price, p.stock, p.status, p.category_id, c.name AS category_name
+        FROM product p LEFT JOIN product_category c ON c.id = p.category_id
+        WHERE p.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
 </mapper>

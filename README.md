@@ -17,8 +17,8 @@
 
 ## 核心流程
 
-- 下单在 MySQL 事务内扣商品库存、占用活动名额和优惠券，按请求标识去重。超时关单使用 Outbox、RabbitMQ 和扫描补偿。 [交易故障演练](docs/learning/28-trade-drill.md)
-- 商品读取使用 Caffeine 与 Redis。本人订单深分页在指定大偏移路径先取当页主键，再读取完整订单。 [缓存一致性](docs/learning/52-strengthening-cache-consistency.md) · [分页测量](docs/learning/50-strengthening-mysql-pagination.md)
+- 下单在 MySQL 事务内扣商品库存、占用活动名额和优惠券，按请求标识去重；限量秒杀支持 Redis 预热、Lua 一人一单原子预扣、RabbitMQ 异步落单与三恒等式对账补偿。超时关单使用 Outbox、RabbitMQ 和扫描补偿。 [交易故障演练](docs/learning/28-trade-drill.md) · [异步秒杀压测](docs/learning/62-seckill-redis-mq-benchmark.md)
+- 商品读取使用 Caffeine 与 Redis；商品搜索支持 Elasticsearch 分词高亮、分类聚合、价格排序与搜索词联想，ES 故障时自动熔断回退 MySQL。本人订单深分页在指定大偏移路径先取当页主键，再读取完整订单。 [缓存一致性](docs/learning/52-strengthening-cache-consistency.md) · [ES 商品检索](docs/learning/63-elasticsearch-product-search.md) · [分页测量](docs/learning/50-strengthening-mysql-pagination.md)
 - 交易助手基于 Spring AI，使用服务端身份执行只读工具，支持 SSE、本人会话历史、费用预算和规则引用。 [预算记录](docs/learning/55-strengthening-agent-budget.md) · [商城规则知识库](docs/learning/61-storefront-rag-corpus.md)
 - 响应异常时，页面自动核对下单、订单状态、助手回答等结果。 [人工验收清单](docs/manual-acceptance.md)
 
@@ -62,6 +62,7 @@ SOURCE sql/013_activity_coupon.sql;
 SOURCE sql/014_agent_conversation.sql;
 SOURCE sql/015_agent_conversation_visible_history.sql;
 SOURCE sql/016_agent_usage_budget.sql;
+SOURCE sql/017_activity_seckill.sql;
 SOURCE sql/seed.sql;
 SOURCE sql/demo_catalog_scale.sql;
 
@@ -82,6 +83,7 @@ SOURCE sql/013_activity_coupon.sql;
 SOURCE sql/014_agent_conversation.sql;
 SOURCE sql/015_agent_conversation_visible_history.sql;
 SOURCE sql/016_agent_usage_budget.sql;
+SOURCE sql/017_activity_seckill.sql;
 ```
 
 以上命令用于首次初始化。已有数据库只按顺序执行尚未应用的编号脚本。已应用的迁移不重复运行。`seed.sql` 只用于开发库，测试用例自行插入测试库数据，并通过事务回滚。

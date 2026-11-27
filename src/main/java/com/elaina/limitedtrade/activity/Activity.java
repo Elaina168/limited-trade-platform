@@ -9,6 +9,7 @@ public class Activity {
     private String name;
     private Integer totalQuantity;
     private Integer remainingQuantity;
+    private Integer perUserLimit;
     private LocalDateTime startsAt;
     private LocalDateTime endsAt;
 
@@ -22,6 +23,8 @@ public class Activity {
     public void setTotalQuantity(Integer totalQuantity) { this.totalQuantity = totalQuantity; }
     public Integer getRemainingQuantity() { return remainingQuantity; }
     public void setRemainingQuantity(Integer remainingQuantity) { this.remainingQuantity = remainingQuantity; }
+    public Integer getPerUserLimit() { return perUserLimit; }
+    public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
     public LocalDateTime getStartsAt() { return startsAt; }
     public void setStartsAt(LocalDateTime startsAt) { this.startsAt = startsAt; }
     public LocalDateTime getEndsAt() { return endsAt; }

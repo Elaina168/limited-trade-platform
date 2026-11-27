@@ -216,6 +216,7 @@ try {
         '--app.order-rate-limit.algorithm=' + (catalogProfile === 'redis-fixed' ? 'fixed-window' : 'token-bucket'),
       ] : []),
       '--app.order-message.enabled=false', '--app.order-message.monitor.enabled=false', '--app.scheduling.enabled=false',
+      '--app.seckill.enabled=false',
     ]),
   ], { cwd: directory, env: {
     ...childEnv, DB_URL: 'jdbc:mysql://' + loopback + ':' + mysqlPort + '/' + schema + '?allowPublicKeyRetrieval=true&sslMode=DISABLED',

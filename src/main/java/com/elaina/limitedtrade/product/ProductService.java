@@ -1,8 +1,12 @@
 package com.elaina.limitedtrade.product;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import com.elaina.limitedtrade.category.CategoryMapper;
+import com.elaina.limitedtrade.product.search.ProductSearchCoordinator;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,11 +19,19 @@ public class ProductService {
     private final ProductMapper productMapper;
     private final ProductCache productCache;
     private final CategoryMapper categoryMapper;
+    private final Optional<ProductSearchCoordinator> searchCoordinator;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public ProductService(ProductMapper productMapper, ProductCache productCache, CategoryMapper categoryMapper) {
+    public ProductService(ProductMapper productMapper,
+                          ProductCache productCache,
+                          CategoryMapper categoryMapper,
+                          Optional<ProductSearchCoordinator> searchCoordinator,
+                          ApplicationEventPublisher eventPublisher) {
         this.productMapper = productMapper;
         this.productCache = productCache;
         this.categoryMapper = categoryMapper;
+        this.searchCoordinator = searchCoordinator;
+        this.eventPublisher = eventPublisher;
     }
 
     public List<Product> listOnSaleProducts() {
@@ -63,6 +75,7 @@ public class ProductService {
         Product product = new Product(null, request.name(), request.price(), request.stock(), "OFF_SALE");
         product.setCategoryId(request.categoryId());
         productMapper.insertProduct(product);
+        eventPublisher.publishEvent(ProductChangedEvent.of(product.getId()));
         return product;
     }
 
@@ -75,6 +88,7 @@ public class ProductService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在");
         }
         productCache.evictAfterCommit();
+        eventPublisher.publishEvent(ProductChangedEvent.of(id));
         return productMapper.findById(id);
     }
 
@@ -84,16 +98,45 @@ public class ProductService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "商品不存在");
         }
         productCache.evictAfterCommit("ON_SALE".equals(request.status()) ? id : null);
+        eventPublisher.publishEvent(ProductChangedEvent.of(id));
         return productMapper.findById(id);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ProductSearchPage searchProducts(int page, int size, Long categoryId, String keyword) {
-        String literalKeyword = literalSearchKeyword(keyword);
-        long offset = (long) (page - 1) * size;
-        long total = productMapper.countSearchProducts(categoryId, literalKeyword);
-        List<ProductSearchItem> items = productMapper.searchProducts(categoryId, literalKeyword, offset, size);
-        return new ProductSearchPage(page, size, total, items);
+        return searchProducts(new ProductSearchCriteria(page, size, categoryId, keyword, null, null, false, null));
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ProductSearchPage searchProducts(ProductSearchCriteria criteria) {
+        if (criteria.minPrice() != null && criteria.maxPrice() != null
+                && criteria.minPrice().compareTo(criteria.maxPrice()) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "最低价格不能高于最高价格");
+        }
+        if (searchCoordinator.isPresent()) {
+            return searchCoordinator.get().search(criteria);
+        }
+        String literalKeyword = literalSearchKeyword(criteria.keyword());
+        long offset = (long) (criteria.page() - 1) * criteria.size();
+        long total = productMapper.countSearchProducts(criteria.categoryId(), literalKeyword);
+        List<ProductSearchItem> items = productMapper.searchProducts(criteria.categoryId(), literalKeyword, offset, criteria.size());
+        return new ProductSearchPage(criteria.page(), criteria.size(), total, items);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<String> suggestProducts(String prefix, int limit) {
+        if (prefix == null || prefix.isBlank()) {
+            return List.of();
+        }
+        if (searchCoordinator.isPresent()) {
+            return searchCoordinator.get().suggest(prefix, limit);
+        }
+        return productMapper.suggestProductNames(literalSearchKeyword(prefix), Math.min(limit, 20));
+    }
+
+    public int reindexSearch() {
+        return searchCoordinator.map(ProductSearchCoordinator::reindexAll)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "搜索协调服务未启用"));
     }
 
     private String literalSearchKeyword(String keyword) {

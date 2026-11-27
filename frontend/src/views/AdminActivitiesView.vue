@@ -4,8 +4,8 @@ import { activities } from '../api/catalog.ts'
 import { adminProducts, createActivity } from '../api/admin.ts'
 import { useAdminPage } from '../composables/useAdminPage.ts'
 import { validQuantity } from '../utils/admin.ts'
-const form = reactive({ productId: '', name: '', totalQuantity: 1, startsAt: '', endsAt: '' })
-function resetDraft() { Object.assign(form, { productId: '', name: '', totalQuantity: 1, startsAt: '', endsAt: '' }) }
+const form = reactive({ productId: '', name: '', totalQuantity: 1, perUserLimit: 1 as number | undefined, startsAt: '', endsAt: '' })
+function resetDraft() { Object.assign(form, { productId: '', name: '', totalQuantity: 1, perUserLimit: 1, startsAt: '', endsAt: '' }) }
 const { data, busy, saving, blocked, error, notice, load, mutate } = useAdminPage(async () => {
   const [list, products] = await Promise.all([activities(), adminProducts()])
   return { activities: list, products }
@@ -13,11 +13,12 @@ const { data, busy, saving, blocked, error, notice, load, mutate } = useAdminPag
 function save() {
   const name = form.name.trim()
   if (!form.productId || !name || name.length > 100 || !validQuantity(form.totalQuantity)
+      || (form.perUserLimit !== undefined && form.perUserLimit !== null && (!validQuantity(form.perUserLimit) || form.perUserLimit > form.totalQuantity))
       || !Number.isFinite(new Date(form.startsAt).getTime()) || !Number.isFinite(new Date(form.endsAt).getTime())
       || new Date(form.startsAt) >= new Date(form.endsAt)) {
-    error.value = '请选择商品，填写1至100字活动名称、正整数名额和有效的起止时间。'; return
+    error.value = '请选择商品，填写1至100字活动名称、正整数名额（每人限购不超过总名额）和有效的起止时间。'; return
   }
-  const payload = { productId: Number(form.productId), name, totalQuantity: form.totalQuantity, startsAt: form.startsAt, endsAt: form.endsAt }
+  const payload = { productId: Number(form.productId), name, totalQuantity: form.totalQuantity, perUserLimit: form.perUserLimit ?? 1, startsAt: form.startsAt, endsAt: form.endsAt }
   void mutate(() => createActivity(payload), '活动已创建。', resetDraft)
 }
 </script>
@@ -30,6 +31,7 @@ function save() {
       <div class="field"><label for="activity-product">活动商品</label><el-select id="activity-product" v-model="form.productId" aria-label="活动商品" placeholder="请选择商品" :disabled="blocked" filterable><el-option v-for="item in data?.products" :key="item.id" :value="String(item.id)" :label="item.name + (item.status === 'ON_SALE' ? '' : '（已下架）')" /></el-select></div>
       <div class="field"><label for="activity-name">活动名称</label><el-input id="activity-name" v-model="form.name" maxlength="100" :disabled="blocked" /></div>
       <div class="field"><label for="activity-quantity">活动名额</label><el-input-number id="activity-quantity" v-model="form.totalQuantity" aria-label="活动名额" :min="1" :max="2147483647" :step="1" :disabled="blocked" /></div>
+      <div class="field"><label for="activity-limit">每人限购</label><el-input-number id="activity-limit" v-model="form.perUserLimit" aria-label="每人限购" :min="1" :max="form.totalQuantity" :step="1" :disabled="blocked" /></div>
       <div class="field"><label for="activity-start">活动开始时间</label><el-date-picker id="activity-start" v-model="form.startsAt" aria-label="活动开始时间" type="datetime" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DDTHH:mm:ss" :disabled="blocked" /></div>
       <div class="field"><label for="activity-end">活动结束时间</label><el-date-picker id="activity-end" v-model="form.endsAt" aria-label="活动结束时间" type="datetime" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DDTHH:mm:ss" :disabled="blocked" /></div>
     </fieldset><el-button type="primary" native-type="submit" :disabled="blocked" :loading="saving">创建活动</el-button>

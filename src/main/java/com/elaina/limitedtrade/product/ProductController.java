@@ -2,9 +2,12 @@ package com.elaina.limitedtrade.product;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.math.BigDecimal;
 import java.util.List;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,12 +40,25 @@ public class ProductController {
     }
 
     @GetMapping("/search")
-    @Operation(summary = "分页搜索在售商品", description = "page默认1，size默认20且最多100，可按categoryId、keyword筛选；关键词按普通文本匹配。")
+    @Operation(summary = "分页搜索在售商品", description = "支持关键词分词/文本匹配、高亮、分类聚合统计、价格区间、仅看有货与排序；ES不可用时自动降级MySQL。")
     public ProductSearchPage searchProducts(
             @RequestParam(defaultValue = "1") @Positive int page,
             @RequestParam(defaultValue = "20") @Positive @Max(100) int size,
             @RequestParam(required = false) @Positive Long categoryId,
-            @RequestParam(required = false) @Size(max = 100) String keyword) {
-        return productService.searchProducts(page, size, categoryId, keyword);
+            @RequestParam(required = false) @Size(max = 100) String keyword,
+            @RequestParam(required = false) @PositiveOrZero BigDecimal minPrice,
+            @RequestParam(required = false) @PositiveOrZero BigDecimal maxPrice,
+            @RequestParam(defaultValue = "false") boolean inStockOnly,
+            @RequestParam(required = false) @Pattern(regexp = "(?:default|relevance|price_asc|price_desc|id_asc)?") String sort) {
+        return productService.searchProducts(
+                new ProductSearchCriteria(page, size, categoryId, keyword, minPrice, maxPrice, inStockOnly, sort));
+    }
+
+    @GetMapping("/suggest")
+    @Operation(summary = "商品搜索词联想", description = "根据输入前缀或词根返回最多10条在售商品名称建议。")
+    public List<String> suggestProducts(
+            @RequestParam(required = false) @Size(max = 100) String prefix,
+            @RequestParam(defaultValue = "8") @Positive @Max(20) int limit) {
+        return productService.suggestProducts(prefix, limit);
     }
 }

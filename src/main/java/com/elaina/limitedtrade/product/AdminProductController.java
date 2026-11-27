@@ -73,4 +73,11 @@ public class AdminProductController {
                                        @Valid @RequestBody UpdateProductStatusRequest request) {
         return productService.updateProductStatus(id, request);
     }
+
+    @PostMapping("/reindex")
+    @Operation(summary = "全量重建商品搜索索引", description = "管理员重建Elasticsearch在售商品索引。")
+    public java.util.Map<String, Object> reindexSearch() {
+        int indexed = productService.reindexSearch();
+        return java.util.Map.of("indexed", indexed);
+    }
 }

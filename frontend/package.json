@@ -13,6 +13,8 @@
     "acceptance": "node acceptance/run.mjs",
     "benchmark": "node acceptance/run.mjs --benchmark",
     "benchmark:pagination": "node acceptance/run.mjs --mysql-pagination",
+    "benchmark:seckill": "node acceptance/seckill-benchmark.mjs",
+    "benchmark:es": "node acceptance/es-search-benchmark.mjs",
     "acceptance:catalog-scale": "node acceptance/run.mjs --catalog-scale"
   },
   "dependencies": {

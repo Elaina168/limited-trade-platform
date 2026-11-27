@@ -18,5 +18,9 @@ app:
   # 既有回滚测试不向 Redis 发布事务中的夹具；缓存集成测试单独开启。
   product-cache:
     enabled: false
+  seckill:
+    enabled: false
+  search:
+    mode: mysql
   order-timeout:
     enabled: false

@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -18,12 +19,18 @@ import com.elaina.limitedtrade.coupon.CouponMapper;
 import com.elaina.limitedtrade.coupon.UserCoupon;
 import com.elaina.limitedtrade.product.Product;
 import com.elaina.limitedtrade.product.ProductCache;
+import com.elaina.limitedtrade.product.ProductChangedEvent;
 import com.elaina.limitedtrade.product.ProductMapper;
 import com.elaina.limitedtrade.order.message.OrderTimeoutOutbox;
 import com.elaina.limitedtrade.order.message.OrderTimeoutOutboxMapper;
+import com.elaina.limitedtrade.seckill.ActivityPurchaseReservation;
+import com.elaina.limitedtrade.seckill.ActivitySeckillMapper;
+import com.elaina.limitedtrade.seckill.ActivitySeckillMessage;
+import com.elaina.limitedtrade.seckill.ActivitySeckillRedisStore;
 import com.elaina.limitedtrade.user.AppUserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -48,12 +55,18 @@ public class OrderService {
     private final CartItemMapper cartMapper;
     private final OrderShipmentMapper shipmentMapper;
     private final CouponMapper couponMapper;
+    private final Optional<ActivitySeckillMapper> seckillMapper;
+    private final Optional<ActivitySeckillRedisStore> seckillRedisStore;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OrderService(AppUserMapper appUserMapper, ProductMapper productMapper, OrderMapper orderMapper,
                         ActivityMapper activityMapper, ProductCache productCache,
                         OrderTimeoutOutboxMapper outboxMapper, OrderItemMapper itemMapper,
                         OrderAddressMapper orderAddressMapper, AddressMapper addressMapper, CartItemMapper cartMapper,
-                        OrderShipmentMapper shipmentMapper, CouponMapper couponMapper) {
+                        OrderShipmentMapper shipmentMapper, CouponMapper couponMapper,
+                        Optional<ActivitySeckillMapper> seckillMapper,
+                        Optional<ActivitySeckillRedisStore> seckillRedisStore,
+                        ApplicationEventPublisher eventPublisher) {
         this.appUserMapper = appUserMapper;
         this.productMapper = productMapper;
         this.orderMapper = orderMapper;
@@ -66,6 +79,9 @@ public class OrderService {
         this.cartMapper = cartMapper;
         this.shipmentMapper = shipmentMapper;
         this.couponMapper = couponMapper;
+        this.seckillMapper = seckillMapper;
+        this.seckillRedisStore = seckillRedisStore;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -102,6 +118,12 @@ public class OrderService {
             }
             if (!activity.getProductId().equals(request.productId())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "活动与商品不匹配");
+            }
+            if (activity.getPerUserLimit() != null && seckillMapper.isPresent()) {
+                int activeQty = seckillMapper.get().sumUserActiveActivityQuantity(userId, request.activityId());
+                if (activeQty + request.quantity() > activity.getPerUserLimit()) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "已达到本活动每人限购上限");
+                }
             }
         }
         OrderItem item = deductItem(request.productId(), request.quantity(), request.activityId());
@@ -221,9 +243,110 @@ public class OrderService {
         event.setCreatedAt(now);
         outboxMapper.insertEvent(event);
         productCache.evictAfterCommit();
+        eventPublisher.publishEvent(new ProductChangedEvent(items.stream().map(OrderItem::productId).distinct().toList()));
         loadDetails(List.of(order));
         logAfterCommit("order_created", order.getId());
         return order;
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public TradeOrder findOwnedOrderByRequest(long userId, String requestId) {
+        TradeOrder order = orderMapper.findByUserAndRequest(userId, requestId);
+        if (order != null) {
+            loadDetails(List.of(order));
+        }
+        return order;
+    }
+
+    @Transactional
+    public TradeOrder materializeSeckillOrder(ActivitySeckillMessage message) {
+        long userId = message.userId();
+        appUserMapper.lockById(userId);
+        ActivitySeckillMapper seckill = seckillMapper.orElse(null);
+        ActivityPurchaseReservation existingRes = seckill == null
+                ? null : seckill.findByUserAndRequest(userId, message.requestId());
+        if (existingRes != null) {
+            if ("CREATED".equals(existingRes.getStatus()) && existingRes.getOrderId() != null) {
+                return getUserOrder(userId, existingRes.getOrderId());
+            }
+            if ("FAILED".equals(existingRes.getStatus()) || "CANCELED".equals(existingRes.getStatus())) {
+                return null;
+            }
+        }
+        TradeOrder existingOrder = orderMapper.findByUserAndRequest(userId, message.requestId());
+        if (existingOrder != null) {
+            loadDetails(List.of(existingOrder));
+            if (existingRes != null && "QUEUED".equals(existingRes.getStatus())) {
+                seckill.markCreated(existingRes.getId(), existingOrder.getId());
+            }
+            return existingOrder;
+        }
+        if (seckill != null && existingRes == null) {
+            ActivityPurchaseReservation row = new ActivityPurchaseReservation();
+            row.setRequestId(message.requestId());
+            row.setUserId(userId);
+            row.setActivityId(message.activityId());
+            row.setProductId(message.productId());
+            row.setQuantity(message.quantity());
+            row.setAddressId(message.addressId());
+            row.setUserCouponId(message.userCouponId());
+            row.setStatus("QUEUED");
+            row.setReservedAt(message.reservedAt());
+            seckill.insertIgnore(row);
+            existingRes = seckill.findByUserAndRequest(userId, message.requestId());
+        }
+
+        UserAddress address = null;
+        if (message.addressId() != null) {
+            address = addressMapper.findOwnedAddress(message.addressId(), userId);
+            if (address == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "地址不存在");
+            }
+        }
+        Activity activity = activityMapper.findByIdForUpdate(message.activityId());
+        if (activity == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "活动不存在");
+        }
+        if (!activity.getProductId().equals(message.productId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "活动与商品不匹配");
+        }
+        if (activity.getPerUserLimit() != null && seckill != null) {
+            int activeQty = seckill.sumUserActiveActivityQuantity(userId, message.activityId());
+            if (activeQty + message.quantity() > activity.getPerUserLimit()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "已达到本活动每人限购上限");
+            }
+        }
+        OrderItem item = deductItem(message.productId(), message.quantity(), message.activityId());
+        UserCoupon owned = null;
+        if (message.userCouponId() != null) {
+            owned = couponMapper.findOwnedForUpdate(message.userCouponId(), userId);
+            if (owned == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "本人优惠券不存在");
+            }
+        }
+        LocalDateTime effectiveTime = message.reservedAt() != null
+                ? message.reservedAt().withNano(0)
+                : LocalDateTime.now().withNano(0);
+        if (activityMapper.deductQuantity(message.activityId(), message.quantity(), effectiveTime) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "活动未开始、已结束或名额不足");
+        }
+        OrderCoupon coupon = null;
+        if (owned != null) {
+            var rule = couponMapper.findCouponById(owned.getCouponId());
+            if (!"AVAILABLE".equals(owned.getStatus()) || !rule.getActivityId().equals(message.activityId())
+                    || effectiveTime.isBefore(rule.getUseStartsAt()) || !effectiveTime.isBefore(rule.getUseEndsAt())
+                    || item.lineAmount().compareTo(rule.getThresholdAmount()) < 0) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "优惠券状态、活动、使用时间或满减门槛不满足");
+            }
+            coupon = new OrderCoupon(null, owned.getId(), rule.getId(), rule.getActivityId(), rule.getName(),
+                    rule.getThresholdAmount(), rule.getDiscountAmount(), rule.getUseStartsAt(), rule.getUseEndsAt());
+        }
+        TradeOrder created = saveOrder(userId, message.requestId(), "DIRECT", List.of(item), address,
+                LocalDateTime.now().withNano(0), coupon);
+        if (seckill != null && existingRes != null) {
+            seckill.markCreated(existingRes.getId(), created.getId());
+        }
+        return created;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -271,6 +394,7 @@ public class OrderService {
         }
         restoreItems(order.getItems());
         couponMapper.releaseForOrder(id);
+        releaseSeckillOnOrderEnd(id, "订单已取消");
         logAfterCommit("order_canceled", id);
         return getUserOrder(userId, id);
     }
@@ -283,8 +407,38 @@ public class OrderService {
         }
         restoreItems(itemMapper.findByOrderIds(List.of(id)));
         couponMapper.releaseForOrder(id);
+        releaseSeckillOnOrderEnd(id, "订单超时关闭");
         logAfterCommit("order_closed", id);
         return true;
+    }
+
+    private void releaseSeckillOnOrderEnd(long orderId, String reason) {
+        if (seckillMapper.isEmpty()) {
+            return;
+        }
+        ActivityPurchaseReservation res = seckillMapper.get().findByOrderId(orderId);
+        if (res == null) {
+            return;
+        }
+        seckillMapper.get().markCanceledByOrderId(orderId, reason);
+        Activity activity = activityMapper.findById(res.getActivityId());
+        int totalCap = activity == null ? 0 : activity.getTotalQuantity();
+        if (seckillRedisStore.isPresent() && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        seckillRedisStore.get().release(res.getUserId(), res.getActivityId(),
+                                res.getRequestId(), res.getQuantity(), totalCap, "CANCELED");
+                    } catch (RuntimeException error) {
+                        log.atWarn().addKeyValue("event", "seckill_redis_release_deferred")
+                                .addKeyValue("orderId", orderId)
+                                .setCause(error)
+                                .log("订单结束后释放Redis秒杀名额失败，将由对账任务校准");
+                    }
+                }
+            });
+        }
     }
 
     private void restoreItems(List<OrderItem> items) {
@@ -298,6 +452,7 @@ public class OrderService {
             productMapper.restoreStock(item.productId(), item.quantity());
         }
         productCache.evictAfterCommit();
+        eventPublisher.publishEvent(new ProductChangedEvent(items.stream().map(OrderItem::productId).distinct().toList()));
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

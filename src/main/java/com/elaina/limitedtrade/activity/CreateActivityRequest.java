@@ -12,5 +12,11 @@ public record CreateActivityRequest(
         @NotBlank @Size(max = 100) String name,
         @NotNull @Positive Integer totalQuantity,
         @NotNull LocalDateTime startsAt,
-        @NotNull LocalDateTime endsAt) {
+        @NotNull LocalDateTime endsAt,
+        @Positive Integer perUserLimit) {
+
+    public CreateActivityRequest(Long productId, String name, Integer totalQuantity,
+                                 LocalDateTime startsAt, LocalDateTime endsAt) {
+        this(productId, name, totalQuantity, startsAt, endsAt, null);
+    }
 }

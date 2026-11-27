@@ -50,6 +50,9 @@ const activityProblem = computed(() => {
   const status = activityStatus(event.value, now.value)
   if (status === '已结束') return '活动已结束。'
   if (status === '即将开始') return '活动尚未开始。'
+  if (event.value.perUserLimit != null && (quantity.value ?? 0) > event.value.perUserLimit) {
+    return `本活动每人限购 ${event.value.perUserLimit} 件。`
+  }
   return event.value.remainingQuantity >= (quantity.value ?? 0) ? '' : '本活动剩余名额不足。'
 })
 watch(usable, list => {
@@ -115,10 +118,16 @@ async function submit() {
   resetCartSave()
   error.value = ''
   try {
-    const order = await checkout.submit('/api/orders', {
-      productId: product.value.id, quantity: quantity.value, addressId: Number(addressId.value),
-      activityId: event.value?.id ?? null, userCouponId: userCouponId.value ? Number(userCouponId.value) : null,
-    })
+    const couponVal = userCouponId.value ? Number(userCouponId.value) : null
+    const order = event.value
+      ? await checkout.submitSeckill(event.value.id, {
+          productId: product.value.id, quantity: quantity.value,
+          addressId: Number(addressId.value), userCouponId: couponVal,
+        }, msg => { notice.value = msg })
+      : await checkout.submit('/api/orders', {
+          productId: product.value.id, quantity: quantity.value, addressId: Number(addressId.value),
+          activityId: null, userCouponId: null,
+        })
     await router.push({ name: 'order-detail', params: { id: order.id }, query: { justCreated: '1' } })
   } catch (cause) { if (!checkout.pending && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
 }

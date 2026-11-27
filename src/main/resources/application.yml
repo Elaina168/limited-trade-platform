@@ -109,3 +109,17 @@ app:
   product-cache:
     enabled: true
     key: limited-trade:product:on-sale:v1
+  seckill:
+    enabled: ${SECKILL_ENABLED:true}
+    key-prefix: limited-trade:seckill
+    request-ttl-seconds: 86400
+    inflight-stale-millis: 3000
+    reconcile-delay-ms: 5000
+  search:
+    mode: ${SEARCH_MODE:mysql}
+    elasticsearch:
+      base-url: ${ELASTICSEARCH_URL:http://127.0.0.1:9200}
+      index-name: ${ELASTICSEARCH_INDEX:limited_products_v1}
+      connect-timeout: 1s
+      read-timeout: 2s
+      failure-cooldown-seconds: 15

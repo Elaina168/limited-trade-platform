@@ -31,8 +31,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api-docs.html", "/swagger-ui.html",
                                 "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
-                                "/api/ping", "/api/products", "/api/products/search", "/api/products/{id:[0-9]+}",
-                                "/api/categories", "/api/auth/csrf").permitAll()
+                                "/api/ping", "/api/products", "/api/products/search", "/api/products/suggest",
+                                "/api/products/{id:[0-9]+}", "/api/categories", "/api/auth/csrf").permitAll()
+                        .requestMatchers("/api/activities/*/seckill", "/api/activities/seckill/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/activities/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

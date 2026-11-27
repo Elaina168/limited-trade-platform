@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.seckill.ActivitySeckillMapper">
+
+    <insert id="insertIgnore" useGeneratedKeys="true" keyProperty="id">
+        INSERT IGNORE INTO activity_purchase_reservation
+            (request_id, user_id, activity_id, product_id, quantity, address_id, user_coupon_id, status, order_id, fail_reason, reserved_at)
+        VALUES
+            (#{requestId}, #{userId}, #{activityId}, #{productId}, #{quantity}, #{addressId}, #{userCouponId}, #{status}, #{orderId}, #{failReason}, #{reservedAt})
+    </insert>
+
+    <select id="findByUserAndRequest" resultType="com.elaina.limitedtrade.seckill.ActivityPurchaseReservation">
+        SELECT id, request_id, user_id, activity_id, product_id, quantity, address_id, user_coupon_id,
+               status, order_id, fail_reason, reserved_at
+        FROM activity_purchase_reservation
+        WHERE user_id = #{userId} AND request_id = #{requestId}
+    </select>
+
+    <select id="findByOrderId" resultType="com.elaina.limitedtrade.seckill.ActivityPurchaseReservation">
+        SELECT id, request_id, user_id, activity_id, product_id, quantity, address_id, user_coupon_id,
+               status, order_id, fail_reason, reserved_at
+        FROM activity_purchase_reservation
+        WHERE order_id = #{orderId}
+        LIMIT 1
+    </select>
+
+    <update id="markCreated">
+        UPDATE activity_purchase_reservation
+        SET status = 'CREATED', order_id = #{orderId}, fail_reason = NULL
+        WHERE id = #{id} AND status = 'QUEUED'
+    </update>
+
+    <update id="markFailed">
+        UPDATE activity_purchase_reservation
+        SET status = 'FAILED', fail_reason = #{failReason}
+        WHERE id = #{id} AND status = 'QUEUED'
+    </update>
+
+    <update id="markCanceledByOrderId">
+        UPDATE activity_purchase_reservation
+        SET status = 'CANCELED', fail_reason = #{failReason}
+        WHERE order_id = #{orderId} AND status = 'CREATED'
+    </update>
+
+    <select id="sumUserActiveActivityQuantity" resultType="int">
+        SELECT COALESCE(SUM(oi.quantity), 0)
+        FROM order_item oi
+        JOIN trade_order o ON o.id = oi.order_id
+        WHERE o.user_id = #{userId}
+          AND oi.activity_id = #{activityId}
+          AND o.status NOT IN ('CANCELED', 'CLOSED')
+    </select>
+
+    <select id="sumActiveOrderQuantityByActivity" resultType="int">
+        SELECT COALESCE(SUM(oi.quantity), 0)
+        FROM order_item oi
+        JOIN trade_order o ON o.id = oi.order_id
+        WHERE oi.activity_id = #{activityId}
+          AND o.status NOT IN ('CANCELED', 'CLOSED')
+    </select>
+
+    <select id="listActiveUserQuantities" resultType="com.elaina.limitedtrade.seckill.ActivitySeckillMapper$UserActivityQuantity">
+        SELECT o.user_id AS userId, COALESCE(SUM(oi.quantity), 0) AS quantity
+        FROM order_item oi
+        JOIN trade_order o ON o.id = oi.order_id
+        WHERE oi.activity_id = #{activityId}
+          AND o.status NOT IN ('CANCELED', 'CLOSED')
+        GROUP BY o.user_id
+    </select>
+
+    <select id="findStaleQueued" resultType="com.elaina.limitedtrade.seckill.ActivityPurchaseReservation">
+        SELECT id, request_id, user_id, activity_id, product_id, quantity, address_id, user_coupon_id,
+               status, order_id, fail_reason, reserved_at
+        FROM activity_purchase_reservation
+        WHERE status = 'QUEUED'
+        ORDER BY id ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

@@ -140,7 +140,7 @@ onUnmounted(() => { sequence++; unsubscribe(); window.clearInterval(timer) })
     <section class="market-card event-summary">
       <h2>{{ product?.name ?? '商品暂不可展示' }}</h2>
       <p v-if="product" class="price">¥{{ Number(product.price).toFixed(2) }}</p>
-      <p>活动剩余 {{ detail.remainingQuantity }} / {{ detail.totalQuantity }} 份</p>
+      <p>活动剩余 {{ detail.remainingQuantity }} / {{ detail.totalQuantity }} 份<span v-if="detail.perUserLimit"> · 每人限购 {{ detail.perUserLimit }} 份</span></p>
       <p class="muted">北京时间 {{ formatActivityTime(detail.startsAt) }} 至 {{ formatActivityTime(detail.endsAt) }}</p>
       <template v-if="product && phase === '进行中'">
         <el-button v-if="auth.user" type="primary" @click="purchaseOpen = true">参加活动下单</el-button>

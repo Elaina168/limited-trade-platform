@@ -162,3 +162,44 @@ test('购物车角标统计总件数且切换账号后不接收旧快照', async
     assert.deepEqual(cart.items, [])
   } finally { disposePinia(pinia) }
 })
+
+test('异步秒杀收到 202 QUEUED 后自动轮询成单并清理待定意图', async () => {
+  let polls = 0
+  const notices: string[] = []
+  globalThis.fetch = async input => {
+    const url = String(input)
+    if (url.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'fresh' })
+    if (url.endsWith('/api/activities/9/seckill')) {
+      return json({ requestId: 'req-1', status: 'QUEUED', orderId: null, order: null, message: '排队中' }, 202)
+    }
+    if (url.includes('/api/activities/seckill/result/')) {
+      polls++
+      if (polls === 1) return json({ requestId: 'req-1', status: 'QUEUED', orderId: null, order: null, message: '排队中' })
+      return json({ requestId: 'req-1', status: 'CREATED', orderId: 501, order: { id: 501, totalAmount: 18 }, message: '已生成' })
+    }
+    throw new Error('unexpected url: ' + url)
+  }
+  const { checkout } = await store()
+  const order = await checkout.submitSeckill(9, { productId: 3, quantity: 1, addressId: 19, userCouponId: null }, msg => notices.push(msg))
+  assert.equal(order.id, 501)
+  assert.equal(polls, 2)
+  assert.ok(notices.length >= 1)
+  assert.equal(checkout.pending, null)
+})
+
+test('异步秒杀最终返回 FAILED 时清除待定意图并抛出原因', async () => {
+  globalThis.fetch = async input => {
+    const url = String(input)
+    if (url.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'fresh' })
+    if (url.endsWith('/api/activities/9/seckill')) {
+      return json({ requestId: 'req-2', status: 'QUEUED', orderId: null, order: null, message: '排队中' }, 202)
+    }
+    return json({ requestId: 'req-2', status: 'FAILED', orderId: null, order: null, message: '优惠券已失效' })
+  }
+  const { checkout } = await store()
+  await assert.rejects(
+    checkout.submitSeckill(9, { productId: 3, quantity: 1, addressId: 19, userCouponId: 88 }),
+    /优惠券已失效/,
+  )
+  assert.equal(checkout.pending, null)
+})
