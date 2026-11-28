@@ -1,3 +1,4 @@
 # Linux入口脚本保留LF，避免Windows检出后无法执行。
 *.sh text eol=lf
 Dockerfile text eol=lf
+docker/**/*.sh text eol=lf

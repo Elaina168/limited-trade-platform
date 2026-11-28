@@ -1,10 +1,10 @@
 # 后续学习与工程化路线
 
-## 当前交付与剩余工作（2026-11-26）
+## 当前交付与剩余工作（2026-11-28）
 
 - 商城与交易助手的本机启动、定向验证和人工检查路线见 [项目首页](../README.md) 与 [人工验收](manual-acceptance.md)。此前各阶段的证据和限制集中在 [开发历史](project-history.md)。
-- 补强 3 保留五服务配置、隔离脚本和手动 CI，待实际运行并验收启动、交易与重建持久化。 [Compose 进度](learning/48-strengthening-compose.md#验收进度)
-- 补强 15 等选定演示环境后实施，需有一次可复核的发布和回滚、告警验证与约定观察期。 [正式计划](superpowers/plans/2026-11-23-project-strengthening.md#补强15版本关联发布回滚告警与持续运行)
+- 补强 3 已在 WSL2 Docker 29.1.3 + Compose 2.40.3 下完成全新空卷五服务健康启动、交易履约、助手 SSE 问答、容器重建数据持久化与 Redis 故障恢复验收。 [Compose 进度](learning/48-strengthening-compose.md#验收进度)
+- 补强 15 已完成发布版本与 18 项迁移兼容性暴露、平滑升级、不兼容版本拦截回滚及消息队列积压告警恢复演练。 [发布回滚演练](learning/64-release-rollback-drill.md)
 
 ## 最新补强安排（2026-11-23）
 

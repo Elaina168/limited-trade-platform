@@ -130,10 +130,23 @@
 
     <build>
         <plugins>
-            <!-- 将应用打包为可以直接运行的 JAR -->
+            <!-- 将应用打包为可以直接运行的 JAR，并生成构建元数据供发布核验读取 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>build-info</id>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                        <configuration>
+                            <additionalProperties>
+                                <requiredMigration>018_product_search_sync</requiredMigration>
+                            </additionalProperties>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
@@ -167,6 +180,7 @@
                                 <include>ActivitySeckillServiceTest.java</include>
                                 <include>ActivitySeckillReconcilerTest.java</include>
                                 <include>ElasticsearchSearchFallbackTest.java</include>
+                                <include>AdminReleaseControllerTest.java</include>
                             </includes>
                             <failIfNoTests>true</failIfNoTests>
                             <systemPropertyVariables>

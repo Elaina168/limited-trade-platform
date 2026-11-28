@@ -195,10 +195,10 @@
 ## 阶段 7：Docker Compose 全栈交付与发布回滚演练收尾（对应原补强 3 & 15）
 
 ### 具体实施步骤
-- [ ] **7.1 完成 Docker Compose 干净环境一键启动与持久化验收**
-  - 更新 `limited-trade-platform/compose.yaml` 与 `Dockerfile`（涵盖 MySQL 自动迁移 `schema.sql` + `002`~`017`、Redis、RabbitMQ、Java 后端、Nginx 托管最新 Vue `dist` 并支持 `/api` 与 SSE 流无缓冲反代，可选 `es` profile 启动 Elasticsearch）。
+- [x] **7.1 完成 Docker Compose 干净环境一键启动与持久化验收**
+  - 更新 `limited-trade-platform/compose.yaml` 与 `Dockerfile`（涵盖 MySQL 自动迁移 `schema.sql` + `002`~`018`、Redis、RabbitMQ、Java 后端、Nginx 托管最新 Vue `dist` 并支持 `/api` 与 SSE 流无缓冲反代，可选 `es` profile 启动 Elasticsearch）。
   - 在全新空卷运行 `python scripts/verify-compose.py`：验证全容器 `healthy`、买家全链路交易、管理员发货、交易助手问答通过，且容器重启/重建后订单、库存与会话历史完整保留。
-- [ ] **7.2 完成版本暴露、发布回滚与消息积压告警恢复演练**
+- [x] **7.2 完成版本暴露、发布回滚与消息积压告警恢复演练**
   - 暴露应用构建 Git SHA 与数据库迁移版本；演练版本更新与故障回滚、模拟 MQ 积压触发告警及恢复清零，归档运行证据至 `docs/learning/48-strengthening-compose.md` 与 `docs/learning/64-release-rollback-drill.md`，更新 `README.md` 交付状态。
 
 ### 阶段 7 验收标准

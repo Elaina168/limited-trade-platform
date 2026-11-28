@@ -26,12 +26,12 @@
 
 ## 当前交付状态
 
-截至 2026-11-26，商城买家与管理端主线、订单回执恢复、商品详情、活动与券的北京时间判断均已通过本机隔离浏览器验收。最近一轮功能提交为 1ab70c5，其确定性回归包含 81 项 Java 测试、54 项 Vue 测试，以及 Java 打包和 Vue 类型检查与构建。浏览器验收使用隔离 MySQL 与本地模型替身。 [人工验收清单](docs/manual-acceptance.md) · [功能提交 CI](https://github.com/Elaina168/limited-trade-platform/actions/runs/45628825446)
+截至 2026-11-28，商城买家与管理端主线、订单回执恢复、限量活动 Redis+MQ 异步秒杀、Elasticsearch 商品检索与自动降级、交易助手工作台及全部 15 项工程化补强均已完成验收。确定性离线 CI 包含 96 项 Java 测试与 72 项前端测试，隔离浏览器验收覆盖网关、全链路交易、秒杀排队恢复与助手流式问答。 [人工验收清单](docs/manual-acceptance.md) · [升级执行方案](docs/plans/2026-11-27-ux-and-resume-upgrade-plan.md)
 
-| 待收尾 | 验收目标 |
+| 收尾交付项 | 验收结果 |
 | --- | --- |
-| 补强 3 · Docker Compose | 五服务从干净环境启动，跑通交易并验证重建后数据保留。 [Compose 说明](docs/learning/48-strengthening-compose.md#验收进度) |
-| 补强 15 · 发布与回滚 | 在确定的演示环境记录提交与迁移版本，演练发布、回滚、告警触发及恢复，留存持续运行证据。 [补强计划](docs/superpowers/plans/2026-11-23-project-strengthening.md#补强15版本关联发布回滚告警与持续运行) |
+| 补强 3 · Docker Compose | WSL2 Docker 29.1.3 + Compose 2.40.3 下全新空卷五服务 `healthy` 启动，跑通幂等下单、异步秒杀、履约闭环、助手 SSE 问答、容器重建持久化及 Redis 故障恢复。 [Compose 验收记录](docs/learning/48-strengthening-compose.md#验收进度) |
+| 补强 15 · 发布与回滚 | `/api/admin/operations/release` 暴露提交 SHA 与 18 项迁移状态（零密钥泄露），隔离演练通过 `r1 → r2` 升级、`r3-bad` 不兼容拦截回滚及 MQ 积压告警触发与恢复清零。 [发布回滚演练](docs/learning/64-release-rollback-drill.md) |
 
 新版 13 篇规则已完成 DeepSeek Flash 真实上游复评，15 个固定场景自动断言通过，5 个预期文档引用全部命中。 [RAG 与真实模型复评](docs/learning/61-storefront-rag-corpus.md)
 

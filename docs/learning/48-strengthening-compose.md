@@ -42,7 +42,7 @@ docker compose --env-file .env.docker stop
 
 `stop` 保留容器，`down` 移除容器和网络并保留命名卷。用 `down` 后再次 `up` 可验证重建后的数据。查看 Compose 配置时使用 `config --quiet`，避免将插值后的认证信息写入日志。
 
-全新 MySQL 卷自动依次执行 `schema.sql`、002–014、种子和演示脚本；已有卷由 MySQL 入口跳过初始化。若旧卷缺 014，先核对缺表及备份，再用相应卷的现有凭据进入 MySQL，对该容器库显式应用 `/bootstrap/014_agent_conversation.sql`。`up --build` 只负责重建服务，已有库的迁移独立管理。
+全新 MySQL 卷自动依次执行 `schema.sql`、002–018、种子和演示脚本；已有卷由 MySQL 入口跳过初始化。若旧卷缺后续迁移，先核对缺表及备份，再用相应卷的现有凭据进入 MySQL，对该容器库显式应用缺失的 `/bootstrap/0xx_*.sql`。`up --build` 只负责重建服务，已有库的迁移独立管理。需要容器内 Elasticsearch 检索时，可叠加 `--profile es` 与 `SEARCH_MODE=es` 启动可选单节点 ES 8.17.2 服务。
 
 ## 独立验收与 CI
 
@@ -65,7 +65,15 @@ CONTAINER_WEB_PORT=28084 CONTAINER_RABBITMQ_PORT=25673 \
 
 ## 验收进度
 
-已解析 Compose 与工作流 YAML，核对五服务、端口和镜像锁定，验证隔离凭据生成与拒绝覆盖，以及容器 Nginx 配置的便携版语法检查。共用网关配置通过补强 2 的真实 Chrome 和 MySQL 回归。按用户安排，本机 Docker 安装、镜像拉取与构建、五服务真实运行和 Compose 集成验收统一留到收尾。届时重新确认安装方案与仓库连通性。手动工作流已在 GitHub 默认分支提供。截至 2026-11-26，尚无该工作流的运行记录。
+2026-11-28 完成本机 WSL2（`Ubuntu-22.04`）Docker 真实安装与全新空卷全链路验收：
+
+- **实际安装与镜像核验**：安装 `Docker Engine 29.1.3`（`29.1.3-0ubuntu3~22.04.2`）、`Docker Compose 2.40.3` 与 `Buildx 0.30.1`，拉取并核对 `eclipse-temurin:21-jre-jammy`、`nginx:1.30.7-alpine`、`mysql:8.0`、`redis:7.4-alpine`、`rabbitmq:4.3.6-management` 五个固定 digest 基础镜像。
+- **全新空卷隔离验收（`trade-check-phase7`）**：使用 `pwsh -NoProfile -File scripts/prepare-containers.ps1 -Instance trade-check-phase7` 生成独立随机凭据，在 WSL2 执行 `CONTAINER_WEB_PORT=28084 CONTAINER_RABBITMQ_PORT=25673 python3 scripts/verify-compose.py trade-check-phase7`，退出码 `0`，留存证据于 `tools/compose-verification/trade-check-phase7/summary.json`：
+  1. 五服务（`mysql`、`redis`、`rabbitmq`、`app`、`web`）全部按依赖顺序进入 `healthy`，`/api/admin/operations/release` 核验 `compatible = true` 且 18 项迁移（至 `018_product_search_sync`）完整生效；
+  2. 通过统一网关 `127.0.0.1:28084` 跑通普通幂等下单 + RabbitMQ Outbox `SENT`、限量活动 Redis+MQ 异步秒杀（`202 QUEUED → CREATED`）、模拟支付、管理员发货与买家确认收货闭环；
+  3. 跑通经 Nginx 无缓冲反代（`proxy_buffering off`）的交易助手 SSE 流式查单与可见历史入库；
+  4. 执行 `stop/start` 及 `docker compose down` 后重新 `up -d --wait`（容器 ID 全部重建），核验买家账号、已完成/待支付订单、扣减后库存与交易助手会话历史 100% 保留；
+  5. 执行 Redis 容器停止与恢复故障演练：停机期间 `/api/ping` 存活、新下单安全拒绝返回 `503` 且不扣库存，恢复后原请求幂等返回并成功取消回补库存。
 
 ## 学习顺序
 

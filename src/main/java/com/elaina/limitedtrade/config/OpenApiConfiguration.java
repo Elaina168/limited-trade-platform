@@ -27,7 +27,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class OpenApiConfiguration {
     private static final Set<String> PUBLIC_READS = Set.of(
-            "/api/ping", "/api/products", "/api/products/search", "/api/products/{id}", "/api/categories", "/api/auth/csrf");
+            "/api/ping", "/api/products", "/api/products/search", "/api/products/suggest",
+            "/api/products/{id}", "/api/categories", "/api/auth/csrf");
     private static final Set<String> CREATED = Set.of(
             "/api/addresses", "/api/admin/products", "/api/admin/categories", "/api/admin/activities");
     private static final Set<String> EMPTY_SUCCESS = Set.of(
@@ -135,6 +136,8 @@ public class OpenApiConfiguration {
                         .description("业务状态、购买参数、库存额度或唯一性冲突，具体条件见接口说明"));
                 if (path.equals("/api/admin/operations/order-messages"))
                     responses.addApiResponse("503", new ApiResponse().description("监控数据库不可用，未返回伪造的正常快照"));
+                if (path.equals("/api/admin/operations/release"))
+                    responses.addApiResponse("503", new ApiResponse().description("数据库不可用或当前库结构缺少必需迁移"));
                 if (method == PathItem.HttpMethod.POST && (path.equals("/api/orders") || path.equals("/api/orders/checkout"))) {
                     responses.get("200").setDescription("相同请求的幂等重试，返回原订单");
                     responses.addApiResponse("201", new ApiResponse().description("首次创建订单")

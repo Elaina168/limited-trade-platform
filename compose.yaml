@@ -27,16 +27,31 @@ services:
     logging: *container-logging
 
   app:
-    image: ${COMPOSE_PROJECT_NAME:-limited-trade-containers}-app:local
+    image: ${COMPOSE_PROJECT_NAME:-limited-trade-containers}-app:${APP_IMAGE_TAG:-local}
     pull_policy: never
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APP_GIT_SHA: ${APP_GIT_SHA:-unknown}
+        APP_RELEASE_LABEL: ${APP_RELEASE_LABEL:-compose}
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
-      APP_INSTANCE_ID: container-app
+      APP_INSTANCE_ID: ${APP_INSTANCE_ID:-container-app}
+      APP_GIT_SHA: ${APP_GIT_SHA:-unknown}
+      APP_RELEASE_LABEL: ${APP_RELEASE_LABEL:-compose}
+      APP_REQUIRED_MIGRATION: ${APP_REQUIRED_MIGRATION:-018_product_search_sync}
+      SECKILL_ENABLED: ${SECKILL_ENABLED:-true}
+      SEARCH_MODE: ${SEARCH_MODE:-mysql}
+      ELASTICSEARCH_BASE_URL: ${ELASTICSEARCH_BASE_URL:-http://elasticsearch:9200}
+      AGENT_ENABLED: ${AGENT_ENABLED:-false}
+      AGENT_RAG_ENABLED: ${AGENT_RAG_ENABLED:-false}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      SPRING_APPLICATION_JSON: ${APP_SPRING_JSON:-{}}
       JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Shanghai -XX:MaxRAMPercentage=75.0"
     volumes:
       - type: bind
@@ -86,7 +101,7 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --host=127.0.0.1 --user=limited_trade --database=limited_trade_platform --batch --skip-column-names --execute='SELECT 1 FROM activity_coupon LIMIT 0; SELECT 1 FROM agent_conversation LIMIT 0; SELECT 1 FROM agent_conversation_turn LIMIT 0'"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --host=127.0.0.1 --user=limited_trade --database=limited_trade_platform --batch --skip-column-names --execute='SELECT 1 FROM activity_coupon LIMIT 0; SELECT 1 FROM agent_conversation_visible_turn LIMIT 0; SELECT 1 FROM activity_purchase_reservation LIMIT 0; SELECT 1 FROM product_search_pending LIMIT 0'"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -127,8 +142,29 @@ services:
       start_period: 30s
     logging: *container-logging
 
+  elasticsearch:
+    profiles: ["es"]
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.2
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.ml.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      TZ: Asia/Shanghai
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health | grep -Eq '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+    logging: *container-logging
+
 volumes:
   mysql_data:
   redis_data:
   rabbitmq_data:
   app_logs:
+  es_data:
