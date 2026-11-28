@@ -1,27 +1,42 @@
-# Spring Cloud独立实验设计
+# 阶段 6 · Spring Cloud Alibaba 独立商城实验
 
-2026-10-21。按用户已确认专项及“开始Spring Cloud”授权实施。SQL Server已取消。
+## 组件边界
 
-## 目标与边界
+```mermaid
+flowchart LR
+    Buyer["实验买家"] --> Gateway["Gateway 18800"]
+    Gateway --> Order["订单服务 18780"]
+    Gateway --> Stock["商品库存服务 18770 / 18771"]
+    Order -->|"OpenFeign"| Stock
+    Order -->|"OpenFeign"| Marketing["营销服务 18772"]
+    Stock -->|"OpenFeign 反查订单"| Order
+    Gateway -.-> Nacos["Nacos 注册与配置 18760"]
+    Order -.-> Nacos
+    Stock -.-> Nacos
+    Marketing -.-> Nacos
+    Order --> MQ["RabbitMQ 延时队列"]
+    Stock --> MQ
+    Order --> MySQL["独立 MySQL cloud_mall_lab"]
+    Stock --> MySQL
+    Marketing --> MySQL
+    Stock --> Redis["隔离 Redis"]
+```
 
-网关→订单预览→商品服务真实跨进程调用，注册发现、双实例分发、配置管理、超时熔断及恢复、网关分层限流均有运行证据。不创建订单、不扣库存、不连接交易库，不做前端/AI/Docker。全部仅监听127.0.0.1。
+同一个 MySQL 实验库按服务使用 `lab_order`、`stock_*` 和 `marketing_*` 表。服务间通过 HTTP 和 MQ 协作，没有跨服务 SQL 写入。库存实例共享 MySQL；Redis 保存商品名称和价格，库存数每次从数据库读取。业务服务仅监听环回地址，网关只暴露公开商品及订单接口，替换客户端自带的用户和链路标识。这是本机可复现实验，部署到可被远程访问的环境需要独立的身份与网络控制。
 
-## 选型与工具
+## 订单、库存和优惠券
 
-复用C:/Program Files/Java/jdk-21.0.10和../limited-trade-platform/tools/apache-maven-3.9.16；复用../limited-trade-platform/tools/maven-repository，Maven下载新增依赖，不另装工具。Spring Boot 3.5.16 + Spring Cloud 2025.0.3；Eureka、Config Server native、Gateway WebFlux、Spring Cloud LoadBalancer、RestClient、Resilience4j。使用独立目录，不创建worktree、不操作父目录Git，不提交推送、不启动子代理。
+1. 订单服务以用户和 `requestId` 去重，在本地事务插入订单后发起 Feign 库存锁定。库存通过订单编号串行处理工作单，事务内一起扣库存并记录 `LOCKED`。占券保存成交时使用的门槛和面额，金额从商品服务提供的单价计算。
+2. 订单事务提交后，持久化的超时任务经发布确认进入 RabbitMQ 延时队列。未支付订单到期后条件更新为 `CLOSED`。取消和关闭由持久任务重试通知库存与营销释放。
+3. 库存锁定后安排自己的延时反查，以数据库工作单兜底补跑。只有订单服务明确返回 `MISSING`、`CANCELED` 或 `CLOSED` 才归还。网络失败和仍在支付期分别继续观察。订单服务也有独立提交的回滚反查工作，用于补偿可能已执行但响应丢失的下游写入。
+4. 释放按订单幂等，状态从 `LOCKED` 或 `RESERVED` 转为 `RELEASED`，重复消息不增发库存或券。释放先到会留下终态工作单，阻止旧锁定或占券请求晚到时重建占用。
 
-版本依据：https://github.com/spring-cloud/spring-cloud-release/wiki/Supported-Versions 及Maven Central 2025.0.3 BOM。2025.0.x对应Boot 3.5.x。
+默认订单支付窗口为 4 秒，库存第一次反查在 10 秒后。订单事务和远程超时均有边界。Redis 商品缓存也不参与库存权威判断。
 
-## 进程与接口
+## 聚合与故障策略
 
-registry:18760，config-server:18761，product-a/b:18770/18771，preview:18780，gateway-a/b:18800/18801。预留端口现场未发现监听。商品服务只读GET /api/products/1，商品价格19.90；POST /api/previews接收productId、quantity(1..10)，返回单价、合计、商品实例及campaign配置。不接受外部价格。配置读取失败拒绝启动，修改campaign后重启预览服务生效，不声称热刷新。
+同一个详情接口复用三次读取。默认用 `CompletableFuture` 在有界线程池并行读取商品、活动和券，显式将请求线程的 `X-Trace-Id` 带到任务，Feign 再传给目标服务。`mode=serial` 使用相同读路径按顺序调用便于对照。
 
-网关总量及来源IP限流仅作用于POST /api/previews；Resilience4j RateLimiter采用固定周期、零等待，网关本机预算，两个网关额度独立，不声称集群限流。来源取TCP对端，忽略客户端X-Forwarded-For；共享IP可能共同受限。交易工程原有Redis用户额度不变。
+营销两个读接口独立使用 Sentinel 慢调用比例和异常比例熔断。受影响的字段返回空列表，商品主信息仍可读取，`marketingDegraded` 标记当前响应有降级。营销依赖不足时，用户仍可按原价下单。网关使用 Sentinel 限制订单写路由的 QPS；商品服务的热点规则按商品编号计数。
 
-商品调用600ms读取超时、300ms连接超时；不重试。Resilience4j计数窗4、最少4次、失败率50%、开启3秒、半开2次；失败明确返回错误，不伪造商品。400/404等输入问题不计入熔断失败。实验drill profile才提供故障切换接口，正常模式无注入入口。
-
-网关生成X-Trace-Id并向下游传递，业务日志记录同一编号和实例；不是完整分布式追踪系统。Eureka快速心跳和关闭自我保护仅适用于本机演示，记录实际故障摘除窗口。
-
-## 成功标准
-
-金额计算正确，两个商品实例均实际收到请求；停止一个实例后记录失败与摘除时间，恢复重新收请求；配置修改后重启生效；慢调用有界失败、持续失败打开熔断、恢复重新成功；两类限流429且方法/路由不误伤，伪造来源头不能绕过；跨服务trace关联；脚本只管理本工程进程，验证后恢复配置并清理实验进程。保留JSON证据和日志，不扩展到交易项目回归。
+动态属性在 Nacos 的 `cloud-lab.properties`、`DEFAULT_GROUP` 下统一发布。营销文案、营销故障演练开关和网关 QPS 规则可更新，无需重启 JVM。实验服务本身的就绪和 Nacos 服务发现之间仍有传播窗口。
