@@ -63,6 +63,7 @@ SOURCE sql/014_agent_conversation.sql;
 SOURCE sql/015_agent_conversation_visible_history.sql;
 SOURCE sql/016_agent_usage_budget.sql;
 SOURCE sql/017_activity_seckill.sql;
+SOURCE sql/018_product_search_sync.sql;
 SOURCE sql/seed.sql;
 SOURCE sql/demo_catalog_scale.sql;
 
@@ -84,6 +85,7 @@ SOURCE sql/014_agent_conversation.sql;
 SOURCE sql/015_agent_conversation_visible_history.sql;
 SOURCE sql/016_agent_usage_budget.sql;
 SOURCE sql/017_activity_seckill.sql;
+SOURCE sql/018_product_search_sync.sql;
 ```
 
 以上命令用于首次初始化。已有数据库只按顺序执行尚未应用的编号脚本。已应用的迁移不重复运行。`seed.sql` 只用于开发库，测试用例自行插入测试库数据，并通过事务回滚。

@@ -340,7 +340,9 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
   await activityDrawer.getByRole('option', { name: /验收最优券/ }).click()
   const seckillUrl = base + '/api/activities/' + active + '/seckill'
   const queuedSeckill = Promise.withResolvers()
-  await buyer.route(seckillUrl, async route => {
+  let seckillPosts = 0
+  const interceptSeckill = async route => {
+    if (++seckillPosts > 1) return route.abort('failed')
     try {
       const request = route.request()
       const headers = await request.allHeaders()
@@ -365,18 +367,46 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
     } catch (error) {
       queuedSeckill.reject(error)
     }
-  }, { times: 1 })
-  const [seckillSubmitted, polledResult] = await Promise.all([
+  }
+  await buyer.route(seckillUrl, interceptSeckill)
+  const resultUrl = base + '/api/activities/seckill/result/*'
+  let reloaded = false
+  let lostResult = false
+  const interceptResult = async route => {
+    if (!reloaded) {
+      return route.fulfill({ status: 200, json: {
+        requestId: new URL(route.request().url()).pathname.split('/').at(-1),
+        status: 'QUEUED', orderId: null, order: null, message: '正在排队生成订单…',
+      } })
+    }
+    if (!lostResult) {
+      lostResult = true
+      return route.abort('failed')
+    }
+    return route.continue()
+  }
+  await buyer.route(resultUrl, interceptResult)
+  const [seckillSubmitted] = await Promise.all([
     queuedSeckill.promise,
     buyer.waitForResponse(r => new URL(r.url()).pathname.startsWith('/api/activities/seckill/result/') && r.status() === 200),
     button(activityDrawer, '提交订单').click(),
   ])
+  // 已受理后刷新活动页；首次恢复查询断开，再次查询继续用原请求标识。
+  const resumeResult = buyer.waitForResponse(r => new URL(r.url()).pathname.startsWith('/api/activities/seckill/result/') && r.status() === 200 && reloaded && lostResult)
+  await buyer.reload({ waitUntil: 'domcontentloaded' })
+  reloaded = true
+  const polledResult = await resumeResult
   const polledJson = await polledResult.json()
   assert.equal(polledJson.status, 'CREATED')
+  assert.equal(polledJson.requestId, seckillSubmitted.request.requestId)
   const created = polledJson.order
   assert.equal(created.discountAmount, 5)
   assert.equal(seckillSubmitted.request.userCouponId, Number(best))
   await buyer.waitForURL(base + '/orders/' + created.id + '?justCreated=1')
+  assert.equal(seckillPosts, 1)
+  assert.equal(lostResult, true)
+  await buyer.unroute(seckillUrl, interceptSeckill)
+  await buyer.unroute(resultUrl, interceptResult)
   await button(buyer, '立即模拟支付').waitFor()
   await buyer.getByText(/^支付剩余 /).waitFor()
   await buyer.goto(base + '/orders')
@@ -386,7 +416,7 @@ export async function verifyTrade(browser, base, backend, fixture, mysql) {
   await buyer.getByRole('tab', name('全部')).click()
   await button(newCard, '立即支付').click()
   await newCard.getByText('已支付', exact).waitFor()
-  console.log('通过：活动购买抽屉自动匹配最优券，保留主动弃券，提交后直达支付')
+  console.log('通过：活动购买保留优惠券选择，刷新与暂时断网后继续查询原排队请求并直达支付')
 
   await button(buyer, '退出登录').click()
   await buyer.goto(base + '/orders/' + id)

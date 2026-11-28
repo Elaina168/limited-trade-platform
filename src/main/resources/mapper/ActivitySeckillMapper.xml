@@ -10,6 +10,20 @@
             (#{requestId}, #{userId}, #{activityId}, #{productId}, #{quantity}, #{addressId}, #{userCouponId}, #{status}, #{orderId}, #{failReason}, #{reservedAt})
     </insert>
 
+    <sql id="orderRequestExists">
+        EXISTS (SELECT 1 FROM trade_order WHERE user_id = #{userId} AND request_id = #{requestId})
+    </sql>
+
+    <select id="hasSubmittedRequest" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM activity_purchase_reservation WHERE user_id = #{userId} AND request_id = #{requestId}
+        ) OR <include refid="orderRequestExists"/>
+    </select>
+
+    <select id="hasOrderRequest" resultType="boolean">
+        SELECT <include refid="orderRequestExists"/>
+    </select>
+
     <select id="findByUserAndRequest" resultType="com.elaina.limitedtrade.seckill.ActivityPurchaseReservation">
         SELECT id, request_id, user_id, activity_id, product_id, quantity, address_id, user_coupon_id,
                status, order_id, fail_reason, reserved_at

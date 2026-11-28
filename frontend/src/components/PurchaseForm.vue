@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElInputNumber } from 'element-plus'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/input-number/style/css'
@@ -19,6 +19,7 @@ import type { Address } from '../types/checkout.ts'
 
 const props = withDefaults(defineProps<{ productId: number; activityId?: number; initialQuantity?: number }>(), { initialQuantity: 1 })
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const checkout = useCheckoutStore()
 const cart = useCartStore()
@@ -39,6 +40,7 @@ const now = ref(Date.now())
 const timer = window.setInterval(() => { now.value = Date.now() }, 1000)
 let sequence = 0
 const blocked = computed(() => busy.value || saving.value || auth.busy || checkout.busy || checkout.pending !== null)
+const queuedNotice = computed(() => checkout.seckillPurchaseRoute === route.fullPath ? checkout.recoveryError || checkout.queuingMessage : '')
 const original = computed(() => Math.round(Number(product.value?.price ?? 0) * 100) * (quantity.value ?? 0) / 100)
 const usable = computed(() => owned.value.filter(item => item.status === 'AVAILABLE' && !item.expired
   && item.coupon.activityId === event.value?.id
@@ -119,15 +121,17 @@ async function submit() {
   error.value = ''
   try {
     const couponVal = userCouponId.value ? Number(userCouponId.value) : null
-    const order = event.value
-      ? await checkout.submitSeckill(event.value.id, {
-          productId: product.value.id, quantity: quantity.value,
-          addressId: Number(addressId.value), userCouponId: couponVal,
-        }, msg => { notice.value = msg })
-      : await checkout.submit('/api/orders', {
-          productId: product.value.id, quantity: quantity.value, addressId: Number(addressId.value),
-          activityId: null, userCouponId: null,
-        })
+    if (event.value) {
+      await checkout.submitSeckill(event.value.id, {
+        productId: product.value.id, quantity: quantity.value,
+        addressId: Number(addressId.value), userCouponId: couponVal,
+      }, undefined, route.fullPath)
+      return
+    }
+    const order = await checkout.submit('/api/orders', {
+      productId: product.value.id, quantity: quantity.value, addressId: Number(addressId.value),
+      activityId: null, userCouponId: null,
+    })
     await router.push({ name: 'order-detail', params: { id: order.id }, query: { justCreated: '1' } })
   } catch (cause) { if (!checkout.pending && !(cause instanceof SessionChangedError)) error.value = errorMessage(cause) }
 }
@@ -137,12 +141,13 @@ watch([...selection, () => auth.status], () => {
   if (auth.status === 'authenticated') void load()
 }, { immediate: true })
 const unsubscribe = onSessionChange(reset)
+onBeforeRouteLeave((_, from) => { checkout.leaveSeckillPurchase(from.fullPath) })
 onUnmounted(() => { sequence++; unsubscribe(); window.clearInterval(timer) })
 </script>
 
 <template>
   <p v-if="error || cartError" class="form-error" role="alert">{{ error || cartError }}</p>
-  <p v-if="notice || cartNotice" class="operation-notice" role="status">{{ notice || cartNotice }}</p>
+  <p v-if="queuedNotice || notice || cartNotice" class="operation-notice" role="status">{{ queuedNotice || notice || cartNotice }}</p>
   <p v-if="busy" role="status">正在加载购买信息…</p>
   <section v-else-if="product" class="market-card purchase-form">
     <h2>{{ product.name }}</h2><p class="price">¥{{ Number(product.price).toFixed(2) }}</p>

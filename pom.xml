@@ -165,6 +165,7 @@
                                 <include>TradeAgentProtocolTest.java</include>
                                 <include>TradeAgentStreamTest.java</include>
                                 <include>ActivitySeckillServiceTest.java</include>
+                                <include>ActivitySeckillReconcilerTest.java</include>
                                 <include>ElasticsearchSearchFallbackTest.java</include>
                             </includes>
                             <failIfNoTests>true</failIfNoTests>

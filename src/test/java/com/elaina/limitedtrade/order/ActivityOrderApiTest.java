@@ -1,10 +1,16 @@
 package com.elaina.limitedtrade.order;
 
 import java.time.LocalDateTime;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 
 import com.elaina.limitedtrade.activity.ActivityMapper;
 import com.elaina.limitedtrade.auth.PlatformUserDetails;
+import com.elaina.limitedtrade.seckill.ActivitySeckillMapper;
+import com.elaina.limitedtrade.seckill.ActivitySeckillMessage;
+import com.elaina.limitedtrade.seckill.ActivitySeckillService;
 import com.elaina.limitedtrade.user.AppUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -23,12 +29,17 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,6 +64,12 @@ class ActivityOrderApiTest {
     private ActivityMapper activityMapper;
 
     @Autowired
+    private ActivitySeckillMapper seckillMapper;
+
+    @Autowired
+    private ActivitySeckillService seckillService;
+
+    @Autowired
     private DataSource dataSource;
 
     private boolean fixtureOwned;
@@ -68,6 +85,7 @@ class ActivityOrderApiTest {
     @AfterEach
     void removeOwnedFixtures() {
         if (fixtureOwned) {
+            jdbcTemplate.update("DELETE FROM activity_purchase_reservation WHERE user_id=7401");
             jdbcTemplate.update("DELETE FROM order_timeout_outbox WHERE order_id IN (SELECT id FROM trade_order WHERE user_id=7401)");
             jdbcTemplate.update("DELETE FROM trade_order WHERE user_id=7401");
             jdbcTemplate.update("DELETE FROM activity WHERE product_id IN (9401,9402)");
@@ -97,6 +115,74 @@ class ActivityOrderApiTest {
                 .andExpect(jsonPath("$.items[0].activityId").isEmpty());
         assertEquals(5, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9401", Integer.class));
         assertEquals(8, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9401", Integer.class));
+    }
+
+    @Test
+    void consumerRejectsOrdinaryOrderWithSameRequestId() throws Exception {
+        assertFalse(seckillMapper.hasSubmittedRequest(7401L, "cross-entry"));
+        placeOrder(1, null, "cross-entry").andExpect(status().isCreated());
+        assertTrue(seckillMapper.hasSubmittedRequest(7401L, "cross-entry"));
+        var message = new ActivitySeckillMessage(7401L, 9401L, 9401L, 1, null, null,
+                "cross-entry", LocalDateTime.now());
+        var error = assertThrows(ResponseStatusException.class,
+                () -> orderService.materializeSeckillOrder(message));
+        assertEquals(409, error.getStatusCode().value());
+        seckillService.consumeMessage(message);
+        assertNull(seckillMapper.findByUserAndRequest(7401L, "cross-entry"));
+        placeOrder(1, null, "cross-entry").andExpect(status().isOk());
+        assertEquals(5, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9401", Integer.class));
+        assertEquals(9, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9401", Integer.class));
+    }
+
+    @Test
+    void completedSeckillCannotReplayThroughOrdinaryEndpoint() throws Exception {
+        var message = new ActivitySeckillMessage(7401L, 9401L, 9401L, 1, null, null,
+                "seckill-owner", LocalDateTime.now());
+        var order = orderService.materializeSeckillOrder(message);
+        assertTrue(seckillMapper.hasSubmittedRequest(7401L, "seckill-owner"));
+        assertEquals(order.getId(), orderService.materializeSeckillOrder(message).getId());
+        placeOrder(1, 9401L, "seckill-owner").andExpect(status().isConflict());
+        var mismatched = new ActivitySeckillMessage(7401L, 9402L, 9401L, 1, null, null,
+                "seckill-owner", LocalDateTime.now());
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+                () -> orderService.materializeSeckillOrder(mismatched)).getStatusCode().value());
+        assertEquals(4, jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9401", Integer.class));
+        assertEquals(9, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9401", Integer.class));
+    }
+
+    @Test
+    void competingSyncAndSeckillTransactionsDebitOnlyTheWinningOrder() throws Exception {
+        var barrier = new CyclicBarrier(2);
+        var ordinary = new CreateOrderRequest(9401L, 1, "entry-race", null);
+        var seckill = new ActivitySeckillMessage(7401L, 9401L, 9401L, 1, null, null,
+                "entry-race", LocalDateTime.now());
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var syncStatus = executor.submit(() -> {
+                barrier.await(5, TimeUnit.SECONDS);
+                try {
+                    orderService.createOrder(7401L, ordinary);
+                    return 201;
+                } catch (ResponseStatusException conflict) {
+                    return conflict.getStatusCode().value();
+                }
+            });
+            var asyncStatus = executor.submit(() -> {
+                barrier.await(5, TimeUnit.SECONDS);
+                try {
+                    orderService.materializeSeckillOrder(seckill);
+                    return 201;
+                } catch (ResponseStatusException conflict) {
+                    return conflict.getStatusCode().value();
+                }
+            });
+            int sync = syncStatus.get(10, TimeUnit.SECONDS);
+            int async = asyncStatus.get(10, TimeUnit.SECONDS);
+            assertTrue((sync == 201 && async == 409) || (sync == 409 && async == 201));
+            assertEquals(async == 201 ? 4 : 5,
+                    jdbcTemplate.queryForObject("SELECT remaining_quantity FROM activity WHERE id=9401", Integer.class));
+        }
+        assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trade_order WHERE user_id=7401", Integer.class));
+        assertEquals(9, jdbcTemplate.queryForObject("SELECT stock FROM product WHERE id=9401", Integer.class));
     }
 
     @Test

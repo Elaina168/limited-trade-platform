@@ -8,6 +8,7 @@ import com.elaina.limitedtrade.order.OrderResponse;
 import com.elaina.limitedtrade.order.OrderService;
 import com.elaina.limitedtrade.order.TradeOrder;
 import com.elaina.limitedtrade.ratelimit.RedisOrderRateLimiter;
+import com.elaina.limitedtrade.user.AppUserMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
@@ -35,6 +36,7 @@ public class ActivitySeckillService {
     private final ActivitySeckillRedisStore redisStore;
     private final ActivitySeckillMapper seckillMapper;
     private final ActivityMapper activityMapper;
+    private final AppUserMapper appUserMapper;
     private final OrderService orderService;
     private final RedisOrderRateLimiter rateLimiter;
     private final RabbitTemplate rabbitTemplate;
@@ -46,6 +48,7 @@ public class ActivitySeckillService {
                                   ActivitySeckillRedisStore redisStore,
                                   ActivitySeckillMapper seckillMapper,
                                   ActivityMapper activityMapper,
+                                  AppUserMapper appUserMapper,
                                   OrderService orderService,
                                   RedisOrderRateLimiter rateLimiter,
                                   RabbitTemplate rabbitTemplate,
@@ -56,6 +59,7 @@ public class ActivitySeckillService {
         this.redisStore = redisStore;
         this.seckillMapper = seckillMapper;
         this.activityMapper = activityMapper;
+        this.appUserMapper = appUserMapper;
         this.orderService = orderService;
         this.rateLimiter = rateLimiter;
         this.rabbitTemplate = rabbitTemplate;
@@ -75,11 +79,15 @@ public class ActivitySeckillService {
             return new SubmitOutcome(status, SeckillResponse.created(request.requestId(), OrderResponse.from(sync.order())));
         }
 
-        String fp = fingerprint(activityId, request.productId(), request.quantity(), request.addressId(), request.userCouponId());
         LocalDateTime tentativeTime = LocalDateTime.now().withNano(0);
         ActivitySeckillMessage tentativeMsg = new ActivitySeckillMessage(
                 userId, activityId, request.productId(), request.quantity(),
                 request.addressId(), request.userCouponId(), request.requestId(), tentativeTime);
+        // Redis 请求键可能已经过期，预扣前先检查持久预约和同步订单共用的请求标识。
+        if (seckillMapper.hasSubmittedRequest(userId, request.requestId())) {
+            return replaySaved(tentativeMsg, seckillMapper.findByUserAndRequest(userId, request.requestId()));
+        }
+        String fp = fingerprint(activityId, request.productId(), request.quantity(), request.addressId(), request.userCouponId());
         String msgJson = serialize(tentativeMsg);
 
         ActivitySeckillRedisStore.ReserveResult result = redisStore.reserve(userId, activityId, request, fp, msgJson);
@@ -104,7 +112,7 @@ public class ActivitySeckillService {
                 publishOrFallbackPersist(message);
                 yield new SubmitOutcome(HttpStatus.ACCEPTED, SeckillResponse.queued(request.requestId()));
             }
-            case "REPLAY" -> handleReplay(userId, request.requestId(), result.detail());
+            case "REPLAY" -> handleReplay(tentativeMsg, result.detail());
             case "CONFLICT", "PRODUCT_MISMATCH", "NOT_STARTED", "ENDED", "LIMIT_EXCEEDED", "SOLD_OUT" ->
                     throw new ResponseStatusException(HttpStatus.CONFLICT, result.detail());
             default -> throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "抢购状态未知：" + result.code());
@@ -121,7 +129,11 @@ public class ActivitySeckillService {
                     .addKeyValue("requestId", message.requestId())
                     .setCause(amqpError)
                     .log("秒杀消息投递暂不可用，已写入预约表由对账任务补发");
-            persistQueuedReservation(message);
+            if (!persistQueuedReservation(message)) {
+                String reason = "请求标识已用于另一笔购买";
+                recordFailureAndRelease(message, reason);
+                throw new ResponseStatusException(HttpStatus.CONFLICT, reason);
+            }
         }
     }
 
@@ -129,19 +141,13 @@ public class ActivitySeckillService {
         rabbitTemplate.convertAndSend(exchangeName, "activity-seckill.create", message);
     }
 
-    private SubmitOutcome handleReplay(long userId, String requestId, String statePart) {
-        if ("QUEUED".equals(statePart)) {
-            ActivityPurchaseReservation saved = seckillMapper.findByUserAndRequest(userId, requestId);
-            if (saved != null && "CREATED".equals(saved.getStatus()) && saved.getOrderId() != null) {
-                TradeOrder order = orderService.getUserOrder(userId, saved.getOrderId());
-                return new SubmitOutcome(HttpStatus.OK, SeckillResponse.created(requestId, OrderResponse.from(order)));
-            }
-            return new SubmitOutcome(HttpStatus.ACCEPTED, SeckillResponse.queued(requestId));
+    private SubmitOutcome handleReplay(ActivitySeckillMessage message, String statePart) {
+        ActivityPurchaseReservation saved = seckillMapper.findByUserAndRequest(message.userId(), message.requestId());
+        if (saved != null) {
+            return replaySaved(message, saved);
         }
-        if (statePart.startsWith("CREATED:")) {
-            long orderId = Long.parseLong(statePart.substring("CREATED:".length()));
-            TradeOrder order = orderService.getUserOrder(userId, orderId);
-            return new SubmitOutcome(HttpStatus.OK, SeckillResponse.created(requestId, OrderResponse.from(order)));
+        if ("QUEUED".equals(statePart)) {
+            return new SubmitOutcome(HttpStatus.ACCEPTED, SeckillResponse.queued(message.requestId()));
         }
         if (statePart.startsWith("FAILED:")) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, statePart.substring("FAILED:".length()));
@@ -149,45 +155,54 @@ public class ActivitySeckillService {
         throw new ResponseStatusException(HttpStatus.CONFLICT, "当前请求无法重复提交");
     }
 
+    private SubmitOutcome replaySaved(ActivitySeckillMessage message, ActivityPurchaseReservation saved) {
+        if (saved == null || !message.matchesReservation(saved)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "请求标识已用于另一笔购买");
+        }
+        SeckillResponse result = savedResult(message.userId(), message.requestId(), saved);
+        return switch (result.status()) {
+            case "CREATED" -> new SubmitOutcome(HttpStatus.OK, result);
+            case "QUEUED" -> new SubmitOutcome(HttpStatus.ACCEPTED, result);
+            default -> throw new ResponseStatusException(HttpStatus.CONFLICT, result.message());
+        };
+    }
+
+    private SeckillResponse savedResult(long userId, String requestId, ActivityPurchaseReservation saved) {
+        return switch (saved.getStatus()) {
+            case "CREATED" -> SeckillResponse.created(requestId, OrderResponse.from(orderService.getSeckillOrder(userId, saved)));
+            case "FAILED", "CANCELED" -> SeckillResponse.failed(requestId, saved.getFailReason());
+            case "QUEUED" -> SeckillResponse.queued(requestId);
+            default -> throw new IllegalStateException("未知的秒杀预约状态：" + saved.getStatus());
+        };
+    }
+
     public SeckillResponse getResult(long userId, String requestId) {
-        if (properties.enabled()) {
-            String redisState = null;
-            try {
-                redisState = redisStore.readRequestState(userId, requestId);
-            } catch (ResponseStatusException ignored) {
-                // Redis 瞬时不可达时回退查询数据库预约与订单记录。
-            }
-            if (redisState != null) {
-                if (redisState.startsWith("CREATED:")) {
-                    long orderId = Long.parseLong(redisState.substring("CREATED:".length()));
-                    TradeOrder order = orderService.getUserOrder(userId, orderId);
-                    return SeckillResponse.created(requestId, OrderResponse.from(order));
-                }
-                if (redisState.startsWith("FAILED:")) {
-                    return SeckillResponse.failed(requestId, redisState.substring("FAILED:".length()));
-                }
-                if ("CANCELED".equals(redisState)) {
-                    return SeckillResponse.failed(requestId, "订单已取消");
-                }
-            }
-        }
         ActivityPurchaseReservation reservation = seckillMapper.findByUserAndRequest(userId, requestId);
-        if (reservation != null) {
-            return switch (reservation.getStatus()) {
-                case "CREATED" -> {
-                    TradeOrder order = orderService.getUserOrder(userId, reservation.getOrderId());
-                    yield SeckillResponse.created(requestId, OrderResponse.from(order));
+        if (reservation != null && requestId.equals(reservation.getRequestId())) {
+            return savedResult(userId, requestId, reservation);
+        }
+        if (properties.enabled()) {
+            String state = redisStore.readRequestState(userId, requestId);
+            if ("QUEUED".equals(state)) {
+                return SeckillResponse.queued(requestId);
+            }
+            if (state != null && state.startsWith("FAILED:")) {
+                return SeckillResponse.failed(requestId, state.substring("FAILED:".length()));
+            }
+            if (state != null && state.startsWith("CREATED:")) {
+                // 第一次查库后订单可能刚提交；仍通过预约读取，不信任缓存里的订单编号。
+                var committed = seckillMapper.findByUserAndRequest(userId, requestId);
+                if (committed != null && requestId.equals(committed.getRequestId())) {
+                    return savedResult(userId, requestId, committed);
                 }
-                case "FAILED", "CANCELED" -> SeckillResponse.failed(requestId, reservation.getFailReason());
-                default -> SeckillResponse.queued(requestId);
-            };
-        }
-        TradeOrder directOrder = orderService.findOwnedOrderByRequest(userId, requestId);
-        if (directOrder != null) {
-            return SeckillResponse.created(requestId, OrderResponse.from(directOrder));
-        }
-        if (properties.enabled() && "QUEUED".equals(redisStore.readRequestState(userId, requestId))) {
-            return SeckillResponse.queued(requestId);
+            }
+        } else {
+            // 关闭异步秒杀时仍使用原有的同步活动下单入口。
+            TradeOrder directOrder = orderService.findOwnedOrderByRequest(userId, requestId);
+            if (directOrder != null && "DIRECT".equals(directOrder.getOrderType())
+                    && directOrder.getItems().getFirst().activityId() != null) {
+                return SeckillResponse.created(requestId, OrderResponse.from(directOrder));
+            }
         }
         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "未找到对应的抢购记录");
     }
@@ -209,27 +224,41 @@ public class ActivitySeckillService {
         }
     }
 
-    private void persistQueuedReservation(ActivitySeckillMessage msg) {
-        requiresNewTx.executeWithoutResult(status -> {
-            ActivityPurchaseReservation row = toReservation(msg, "QUEUED", null);
-            seckillMapper.insertIgnore(row);
-        });
+    private boolean persistQueuedReservation(ActivitySeckillMessage msg) {
+        return Boolean.TRUE.equals(requiresNewTx.execute(status -> {
+            appUserMapper.lockById(msg.userId());
+            ActivityPurchaseReservation saved = seckillMapper.findByUserAndRequest(msg.userId(), msg.requestId());
+            if (saved != null) return msg.matchesReservation(saved);
+            if (seckillMapper.hasOrderRequest(msg.userId(), msg.requestId())) return false;
+            seckillMapper.insertIgnore(toReservation(msg, "QUEUED", null));
+            return true;
+        }));
     }
 
     private void recordFailureAndRelease(ActivitySeckillMessage msg, String reason) {
         String truncated = reason.length() > 200 ? reason.substring(0, 200) : reason;
         Integer totalCap = requiresNewTx.execute(status -> {
-            ActivityPurchaseReservation row = toReservation(msg, "FAILED", truncated);
-            seckillMapper.insertIgnore(row);
+            appUserMapper.lockById(msg.userId());
             ActivityPurchaseReservation saved = seckillMapper.findByUserAndRequest(msg.userId(), msg.requestId());
-            if (saved != null && "QUEUED".equals(saved.getStatus())) {
+            if (saved == null) {
+                // 落败的异步请求只补偿 Redis，已建同步订单保留原请求标识和重放语义。
+                if (!seckillMapper.hasOrderRequest(msg.userId(), msg.requestId())) {
+                    seckillMapper.insertIgnore(toReservation(msg, "FAILED", truncated));
+                }
+            } else if (!msg.matchesReservation(saved)) {
+                // 存储键与 Redis 原始键大小写规则不同；同一 Redis 键的旧消息不能归还当前预约的名额。
+                if (msg.requestId().equals(saved.getRequestId())) return null;
+            } else if ("QUEUED".equals(saved.getStatus())) {
                 seckillMapper.markFailed(saved.getId(), truncated);
+            } else if (!"FAILED".equals(saved.getStatus())) {
+                return null;
             }
             Activity activity = activityMapper.findById(msg.activityId());
             return activity == null ? 0 : activity.getTotalQuantity();
         });
+        if (totalCap == null) return;
         redisStore.release(msg.userId(), msg.activityId(), msg.requestId(),
-                msg.quantity(), totalCap == null ? 0 : totalCap, "FAILED:" + truncated);
+                msg.quantity(), totalCap, "FAILED:" + truncated);
         log.atInfo().addKeyValue("event", "seckill_reservation_rejected")
                 .addKeyValue("activityId", msg.activityId())
                 .addKeyValue("userId", msg.userId())

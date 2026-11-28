@@ -21,6 +21,7 @@ for script in \
     015_agent_conversation_visible_history.sql \
     016_agent_usage_budget.sql \
     017_activity_seckill.sql \
+    018_product_search_sync.sql \
     seed.sql \
     demo_catalog.sql \
     demo_catalog_scale.sql

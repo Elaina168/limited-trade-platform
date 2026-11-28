@@ -17,8 +17,9 @@
    - 高亮使用私有区占位符 `\uE000` / `\uE001` 接收 ES 片段，经 `HtmlUtils.htmlEscape()` 转义原始商品名称后再替换为 `<mark>` 与 `</mark>`；前端 `utils/search-highlight.ts` 将其解析为纯文本片段数组渲染，全程不使用 `v-html`，彻底杜绝存储型/反射型 XSS。
 3. **事务提交后增量同步与故障自动降级（`ProductSearchCoordinator`）**：
    - 启动就绪（`ApplicationReadyEvent`）当索引新建或为空时按 1,000 条分批 `_bulk` 全量灌入在售商品；管理端新增 `POST /api/admin/products/reindex` 支持一键全量重建。
-   - 商品新建、改价、上下架、库存变动与下单/取消均发布 `ProductChangedEvent`，由 `@TransactionalEventListener(phase = AFTER_COMMIT)` 增量同步 ES（上架 `index`、下架或删除 `delete`），保证未提交或回滚事务绝不污染索引。
+   - ES 模式下，`@TransactionalEventListener(phase = BEFORE_COMMIT)` 在商品变更的同一个 MySQL 事务记入 `product_search_pending`。同步任务只读取已提交的记录，每批最多 100 件，按 MySQL 中当前状态写入或删除 ES 文档。ES 确认后，仅删除仍匹配本批变更标识的记录，处理中产生的新变更保留到下一批。
    - 当 ES 超时或返回异常时，`ProductSearchCoordinator` 自动开启冷却熔断窗口（默认 `failure-cooldown-seconds: 15`），立即回退 `MysqlProductSearchGateway` 并标记 `engine = "mysql", degraded = true`，冷却期内后续请求零等待直走 MySQL，前端温和提示而不报错白屏。
+   - 冷却结束后从持久表续传；启动、定时任务和读请求都可推进恢复，队列清空后搜索及联想才切回 ES。启用 ES 前对业务库执行 `sql/018_product_search_sync.sql`，同一业务库下负责商品或库存写入的实例使用相同的 ES 模式和目标索引。默认 MySQL 模式不读写此表。
 
 ## 实施过程中发现并修复的真实工程问题
 

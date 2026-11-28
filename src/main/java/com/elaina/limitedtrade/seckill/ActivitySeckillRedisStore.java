@@ -27,6 +27,8 @@ public class ActivitySeckillRedisStore {
     private final DefaultRedisScript<List> reserveScript = new DefaultRedisScript<>();
     private final DefaultRedisScript<Long> completeScript = new DefaultRedisScript<>();
     private final DefaultRedisScript<Long> releaseScript = new DefaultRedisScript<>();
+    private final DefaultRedisScript<List> snapshotScript = new DefaultRedisScript<>();
+    private final DefaultRedisScript<Long> repairScript = new DefaultRedisScript<>();
 
     public ActivitySeckillRedisStore(StringRedisTemplate redis, SeckillProperties properties) {
         this.redis = redis;
@@ -39,6 +41,10 @@ public class ActivitySeckillRedisStore {
         completeScript.setResultType(Long.class);
         releaseScript.setLocation(new ClassPathResource("redis/activity-seckill-release.lua"));
         releaseScript.setResultType(Long.class);
+        snapshotScript.setLocation(new ClassPathResource("redis/activity-seckill-snapshot.lua"));
+        snapshotScript.setResultType(List.class);
+        repairScript.setLocation(new ClassPathResource("redis/activity-seckill-repair.lua"));
+        repairScript.setResultType(Long.class);
     }
 
     public String metaKey(long activityId) {
@@ -155,16 +161,42 @@ public class ActivitySeckillRedisStore {
     }
 
     public RedisActivitySnapshot readSnapshot(long activityId) {
-        boolean initialized = Boolean.TRUE.equals(redis.hasKey(metaKey(activityId)));
-        String quotaStr = initialized ? redis.opsForValue().get(quotaKey(activityId)) : null;
-        Integer quota = quotaStr == null ? null : Integer.parseInt(quotaStr);
-        Map<Object, Object> rawInflight = redis.opsForHash().entries(inflightKey(activityId));
+        List<?> raw = executeRedis(() -> redis.execute(snapshotScript, reconciliationKeys(activityId)));
+        boolean initialized = ((Number) raw.get(0)).intValue() == 1;
+        String quotaStr = (String) raw.get(1);
+        Integer quota = quotaStr.isEmpty() ? null : Integer.valueOf(quotaStr);
+        List<?> rawInflight = (List<?>) raw.get(2);
         Map<String, String> inflight = new HashMap<>();
-        rawInflight.forEach((k, v) -> inflight.put(String.valueOf(k), String.valueOf(v)));
-        Map<Object, Object> rawBuyers = redis.opsForHash().entries(buyersKey(activityId));
+        for (int i = 0; i < rawInflight.size(); i += 2) {
+            inflight.put((String) rawInflight.get(i), (String) rawInflight.get(i + 1));
+        }
+        List<?> rawBuyers = (List<?>) raw.get(3);
         Map<Long, Integer> buyers = new HashMap<>();
-        rawBuyers.forEach((k, v) -> buyers.put(Long.parseLong(String.valueOf(k)), Integer.parseInt(String.valueOf(v))));
+        for (int i = 0; i < rawBuyers.size(); i += 2) {
+            buyers.put(Long.valueOf((String) rawBuyers.get(i)), Integer.valueOf((String) rawBuyers.get(i + 1)));
+        }
         return new RedisActivitySnapshot(initialized, quota, inflight, buyers);
+    }
+
+    public boolean repairQuotas(long activityId, RedisActivitySnapshot snapshot, int remaining, Map<Long, Integer> buyers) {
+        List<String> args = new ArrayList<>();
+        args.add(snapshot.remainingQuota() == null ? "" : snapshot.remainingQuota().toString());
+        args.add(Integer.toString(snapshot.buyerQuantities().size()));
+        snapshot.buyerQuantities().forEach((id, quantity) -> {
+            args.add(id.toString());
+            args.add(quantity.toString());
+        });
+        args.add(Integer.toString(remaining));
+        buyers.forEach((id, quantity) -> {
+            args.add(id.toString());
+            args.add(quantity.toString());
+        });
+        return Long.valueOf(1).equals(executeRedis(() ->
+                redis.execute(repairScript, reconciliationKeys(activityId), args.toArray())));
+    }
+
+    private List<String> reconciliationKeys(long activityId) {
+        return List.of(metaKey(activityId), quotaKey(activityId), inflightKey(activityId), buyersKey(activityId));
     }
 
     public void removeInflight(long activityId, String memberKey) {

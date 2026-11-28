@@ -8,6 +8,8 @@ import com.elaina.limitedtrade.product.ProductSearchPage;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.HtmlUtils;
 
 @Component
@@ -20,6 +22,7 @@ public class MysqlProductSearchGateway implements ProductSearchGateway {
     }
 
     @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ProductSearchPage search(ProductSearchCriteria criteria) {
         String rawKeyword = criteria.normalizedKeyword();
         String literalKeyword = escapeLike(rawKeyword);

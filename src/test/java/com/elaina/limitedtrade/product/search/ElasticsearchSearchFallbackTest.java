@@ -17,17 +17,86 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 class ElasticsearchSearchFallbackTest {
+
+    @Test
+    void searchReturnsMysqlWhileAnIndexInitializationIsScheduled() {
+        var props = new SearchProperties(SearchProperties.Mode.ES, null);
+        var pending = Mockito.mock(ProductSearchSyncMapper.class);
+        var sync = Mockito.mock(ProductSearchIndexSync.class);
+        var mysql = Mockito.mock(MysqlProductSearchGateway.class);
+        var es = Mockito.mock(ElasticsearchProductSearchGateway.class);
+        var scheduler = Mockito.mock(ThreadPoolTaskScheduler.class);
+        var coordinator = new ProductSearchCoordinator(props, mysql, es, pending, sync, scheduler);
+        var criteria = new ProductSearchCriteria(1, 12, null, null, null, null, false, "relevance");
+        when(mysql.search(criteria))
+                .thenReturn(new ProductSearchPage(1, 12, 1, List.of(), List.of(), "mysql", false));
+
+        assertTrue(coordinator.search(criteria).degraded());
+        assertTrue(coordinator.search(criteria).degraded());
+        verify(scheduler).execute(any(Runnable.class));
+        verify(sync, never()).initializeIndex();
+        verify(es, never()).search(criteria);
+    }
+
+    @Test
+    void aFailedBulkRemainsPendingAndRecoveryAcknowledgesOnlyTheReadVersion() {
+        ProductSearchSyncMapper pending = Mockito.mock(ProductSearchSyncMapper.class);
+        ProductMapper products = Mockito.mock(ProductMapper.class);
+        ElasticsearchProductSearchGateway es = Mockito.mock(ElasticsearchProductSearchGateway.class);
+        var sync = new ProductSearchIndexSync(pending, products, es);
+        var previous = new ProductSearchChange(10L, "previous");
+        var latest = new ProductSearchChange(10L, "latest");
+        when(pending.tryLockWorker()).thenReturn(0L);
+        when(pending.findPending(anyInt())).thenReturn(List.of(previous), List.of(latest));
+        var offSale = new ProductSearchItem(10L, "键盘", new BigDecimal("199.00"), 5, "OFF_SALE", null, null);
+        when(products.findSearchItemsByIds(List.of(10L))).thenReturn(List.of(offSale));
+        doThrow(new IllegalStateException("ES unavailable")).doNothing()
+                .when(es).bulkIncrementalUpsert(List.of(), List.of(10L));
+
+        assertThrows(IllegalStateException.class, sync::drainBatch);
+        verify(pending, never()).acknowledge(any());
+        sync.drainBatch();
+        verify(pending).acknowledge(List.of(latest));
+        verify(pending, never()).acknowledge(List.of(previous));
+    }
+
+    @Test
+    void aReachableElasticsearchIsNotUsedBeforePendingChangesAreApplied() {
+        var props = new SearchProperties(SearchProperties.Mode.ES,
+                new SearchProperties.Elasticsearch(null, null, null, null, 5, false, null, null));
+        ProductSearchSyncMapper pending = Mockito.mock(ProductSearchSyncMapper.class);
+        ProductSearchIndexSync sync = Mockito.mock(ProductSearchIndexSync.class);
+        MysqlProductSearchGateway mysql = Mockito.mock(MysqlProductSearchGateway.class);
+        ElasticsearchProductSearchGateway es = Mockito.mock(ElasticsearchProductSearchGateway.class);
+        var coordinator = new ProductSearchCoordinator(props, mysql, es, pending, sync,
+                Mockito.mock(ThreadPoolTaskScheduler.class));
+        var criteria = new ProductSearchCriteria(1, 12, null, null, null, null, false, "relevance");
+        var mysqlPage = new ProductSearchPage(1, 12, 1, List.of(), List.of(), "mysql", false);
+        var esPage = new ProductSearchPage(1, 12, 1, List.of(), List.of(), "elasticsearch", false);
+        when(mysql.search(criteria)).thenReturn(mysqlPage);
+        when(es.search(criteria)).thenReturn(esPage);
+        when(pending.hasPending()).thenReturn(true, true, true, false);
+
+        assertTrue(coordinator.search(criteria).degraded());
+        verify(es, never()).search(criteria);
+        assertEquals(esPage, coordinator.search(criteria));
+    }
 
     @Test
     void elasticsearchGatewayParsesHighlightsAndFacetsAndFallsBackToMysqlOnFailure() throws Exception {
@@ -111,7 +180,9 @@ class ElasticsearchSearchFallbackTest {
 
             MysqlProductSearchGateway mysqlGateway = new MysqlProductSearchGateway(productMapper);
             ElasticsearchProductSearchGateway esGateway = new ElasticsearchProductSearchGateway(props, new ObjectMapper(), categoryMapper);
-            ProductSearchCoordinator coordinator = new ProductSearchCoordinator(props, mysqlGateway, esGateway, productMapper);
+            ProductSearchCoordinator coordinator = new ProductSearchCoordinator(props, mysqlGateway, esGateway,
+                    Mockito.mock(ProductSearchSyncMapper.class), Mockito.mock(ProductSearchIndexSync.class),
+                    Mockito.mock(ThreadPoolTaskScheduler.class));
 
             ProductSearchPage okPage = coordinator.search(new ProductSearchCriteria(1, 12, null, "键盘", null, null, false, "relevance"));
             assertEquals("elasticsearch", okPage.engine());

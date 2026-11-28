@@ -15,7 +15,7 @@ export interface CartCheckout { productIds: number[]; addressId: number }
 export type OrderIntent =
   | { path: '/api/orders'; data: DirectPurchase; requestId: string }
   | { path: '/api/orders/checkout'; data: CartCheckout; requestId: string }
-  | { path: `/api/activities/${number}/seckill`; data: SeckillPurchase; requestId: string; queued?: boolean }
+  | { path: `/api/activities/${number}/seckill`; data: SeckillPurchase; requestId: string; queued?: boolean; purchaseRoute?: string }
 export interface SeckillStatusResponse {
   requestId: string
   status: 'QUEUED' | 'CREATED' | 'FAILED'

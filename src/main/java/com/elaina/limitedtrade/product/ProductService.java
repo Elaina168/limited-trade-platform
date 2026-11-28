@@ -2,7 +2,6 @@ package com.elaina.limitedtrade.product;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 import com.elaina.limitedtrade.category.CategoryMapper;
 import com.elaina.limitedtrade.product.search.ProductSearchCoordinator;
 
@@ -19,13 +18,13 @@ public class ProductService {
     private final ProductMapper productMapper;
     private final ProductCache productCache;
     private final CategoryMapper categoryMapper;
-    private final Optional<ProductSearchCoordinator> searchCoordinator;
+    private final ProductSearchCoordinator searchCoordinator;
     private final ApplicationEventPublisher eventPublisher;
 
     public ProductService(ProductMapper productMapper,
                           ProductCache productCache,
                           CategoryMapper categoryMapper,
-                          Optional<ProductSearchCoordinator> searchCoordinator,
+                          ProductSearchCoordinator searchCoordinator,
                           ApplicationEventPublisher eventPublisher) {
         this.productMapper = productMapper;
         this.productCache = productCache;
@@ -107,36 +106,23 @@ public class ProductService {
         return searchProducts(new ProductSearchCriteria(page, size, categoryId, keyword, null, null, false, null));
     }
 
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ProductSearchPage searchProducts(ProductSearchCriteria criteria) {
         if (criteria.minPrice() != null && criteria.maxPrice() != null
                 && criteria.minPrice().compareTo(criteria.maxPrice()) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "最低价格不能高于最高价格");
         }
-        if (searchCoordinator.isPresent()) {
-            return searchCoordinator.get().search(criteria);
-        }
-        String literalKeyword = literalSearchKeyword(criteria.keyword());
-        long offset = (long) (criteria.page() - 1) * criteria.size();
-        long total = productMapper.countSearchProducts(criteria.categoryId(), literalKeyword);
-        List<ProductSearchItem> items = productMapper.searchProducts(criteria.categoryId(), literalKeyword, offset, criteria.size());
-        return new ProductSearchPage(criteria.page(), criteria.size(), total, items);
+        return searchCoordinator.search(criteria);
     }
 
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<String> suggestProducts(String prefix, int limit) {
         if (prefix == null || prefix.isBlank()) {
             return List.of();
         }
-        if (searchCoordinator.isPresent()) {
-            return searchCoordinator.get().suggest(prefix, limit);
-        }
-        return productMapper.suggestProductNames(literalSearchKeyword(prefix), Math.min(limit, 20));
+        return searchCoordinator.suggest(prefix, limit);
     }
 
     public int reindexSearch() {
-        return searchCoordinator.map(ProductSearchCoordinator::reindexAll)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "搜索协调服务未启用"));
+        return searchCoordinator.reindexAll();
     }
 
     private String literalSearchKeyword(String keyword) {

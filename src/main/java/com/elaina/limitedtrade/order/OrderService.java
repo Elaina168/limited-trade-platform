@@ -87,17 +87,12 @@ public class OrderService {
     @Transactional
     public CreateOrderResult createOrder(long userId, CreateOrderRequest request) {
         appUserMapper.lockById(userId);
+        rejectSeckillRequest(userId, request.requestId());
         TradeOrder existing = orderMapper.findByUserAndRequest(userId, request.requestId());
         if (existing != null) {
             loadDetails(List.of(existing));
-            if (!"DIRECT".equals(existing.getOrderType())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "请求标识已用于另一笔购买");
-            }
-            OrderItem item = existing.getItems().getFirst();
-            if (!item.productId().equals(request.productId()) || !item.quantity().equals(request.quantity())
-                    || !Objects.equals(item.activityId(), request.activityId())
-                    || !Objects.equals(existing.getCoupon() == null ? null : existing.getCoupon().userCouponId(), request.userCouponId())
-                    || !Objects.equals(existing.getAddress() == null ? null : existing.getAddress().sourceAddressId(), request.addressId())) {
+            if (!matchesDirectOrder(existing, request.productId(), request.quantity(), request.activityId(),
+                    request.addressId(), request.userCouponId())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "请求标识已用于另一笔购买");
             }
             return new CreateOrderResult(existing, false);
@@ -163,6 +158,7 @@ public class OrderService {
         }
         List<Long> productIds = request.productIds().stream().sorted().toList();
         appUserMapper.lockById(userId);
+        rejectSeckillRequest(userId, request.requestId());
         TradeOrder existing = orderMapper.findByUserAndRequest(userId, request.requestId());
         if (existing != null) {
             loadDetails(List.of(existing));
@@ -191,6 +187,26 @@ public class OrderService {
                 LocalDateTime.now().withNano(0), null);
         cartMapper.deleteSelected(userId, productIds);
         return new CreateOrderResult(order, true);
+    }
+
+    private void rejectSeckillRequest(long userId, String requestId) {
+        // 普通订单的请求标识按大小写区分，预约查询命中后再比对原始键。
+        if (seckillMapper.map(mapper -> mapper.findByUserAndRequest(userId, requestId))
+                .filter(reservation -> requestId.equals(reservation.getRequestId())).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "请求标识已用于另一笔购买");
+        }
+    }
+
+    private static boolean matchesDirectOrder(TradeOrder order, long productId, int quantity, Long activityId,
+                                              Long addressId, Long userCouponId) {
+        if (!"DIRECT".equals(order.getOrderType())) {
+            return false;
+        }
+        OrderItem item = order.getItems().getFirst();
+        return item.productId() == productId && item.quantity() == quantity
+                && Objects.equals(item.activityId(), activityId)
+                && Objects.equals(order.getAddress() == null ? null : order.getAddress().sourceAddressId(), addressId)
+                && Objects.equals(order.getCoupon() == null ? null : order.getCoupon().userCouponId(), userCouponId);
     }
 
     private OrderItem deductItem(long productId, int quantity, Long activityId) {
@@ -258,6 +274,17 @@ public class OrderService {
         return order;
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public TradeOrder getSeckillOrder(long userId, ActivityPurchaseReservation reservation) {
+        TradeOrder order = getUserOrder(userId, reservation.getOrderId());
+        if (!reservation.getRequestId().equals(order.getRequestId())
+                || !matchesDirectOrder(order, reservation.getProductId(), reservation.getQuantity(),
+                reservation.getActivityId(), reservation.getAddressId(), reservation.getUserCouponId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "抢购记录与原订单不匹配");
+        }
+        return order;
+    }
+
     @Transactional
     public TradeOrder materializeSeckillOrder(ActivitySeckillMessage message) {
         long userId = message.userId();
@@ -266,20 +293,19 @@ public class OrderService {
         ActivityPurchaseReservation existingRes = seckill == null
                 ? null : seckill.findByUserAndRequest(userId, message.requestId());
         if (existingRes != null) {
-            if ("CREATED".equals(existingRes.getStatus()) && existingRes.getOrderId() != null) {
-                return getUserOrder(userId, existingRes.getOrderId());
+            if (!message.matchesReservation(existingRes)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "请求标识已用于另一笔购买");
+            }
+            if ("CREATED".equals(existingRes.getStatus())) {
+                return getSeckillOrder(userId, existingRes);
             }
             if ("FAILED".equals(existingRes.getStatus()) || "CANCELED".equals(existingRes.getStatus())) {
                 return null;
             }
         }
-        TradeOrder existingOrder = orderMapper.findByUserAndRequest(userId, message.requestId());
-        if (existingOrder != null) {
-            loadDetails(List.of(existingOrder));
-            if (existingRes != null && "QUEUED".equals(existingRes.getStatus())) {
-                seckill.markCreated(existingRes.getId(), existingOrder.getId());
-            }
-            return existingOrder;
+        // 同步购买和秒杀消费均先锁用户。同键订单只有凭匹配的秒杀预约才能重放。
+        if (orderMapper.findByUserAndRequest(userId, message.requestId()) != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "请求标识已用于另一笔购买");
         }
         if (seckill != null && existingRes == null) {
             ActivityPurchaseReservation row = new ActivityPurchaseReservation();

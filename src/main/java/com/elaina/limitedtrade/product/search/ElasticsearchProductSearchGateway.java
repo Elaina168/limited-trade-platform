@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
@@ -70,14 +71,18 @@ public class ElasticsearchProductSearchGateway implements ProductSearchGateway {
         this.adminRestClient = bulkBuilder.build();
     }
 
-    public synchronized boolean ensureIndex() {
+    public boolean ensureIndex() {
+        return ensureIndex(adminRestClient);
+    }
+
+    private synchronized boolean ensureIndex(RestClient client) {
         if (indexVerified) {
             return false;
         }
         String index = properties.elasticsearch().indexName();
         try {
-            adminRestClient.head().uri("/{index}", index).retrieve().toBodilessEntity();
-            adminRestClient.get()
+            client.head().uri("/{index}", index).retrieve().toBodilessEntity();
+            client.get()
                     .uri("/_cluster/health/{index}?wait_for_status=yellow&timeout=10s", index)
                     .retrieve()
                     .toBodilessEntity();
@@ -87,7 +92,7 @@ public class ElasticsearchProductSearchGateway implements ProductSearchGateway {
             boolean ikAvailable = detectIkPlugin();
             String mappingJson = buildIndexSettingsAndMappings(ikAvailable);
             try {
-                adminRestClient.put().uri("/{index}?wait_for_active_shards=1", index)
+                client.put().uri("/{index}?wait_for_active_shards=1", index)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(mappingJson.getBytes(StandardCharsets.UTF_8))
                         .retrieve()
@@ -97,13 +102,17 @@ public class ElasticsearchProductSearchGateway implements ProductSearchGateway {
                     throw alreadyExists;
                 }
             }
-            adminRestClient.get()
+            client.get()
                     .uri("/_cluster/health/{index}?wait_for_status=yellow&timeout=10s", index)
                     .retrieve()
                     .toBodilessEntity();
             indexVerified = true;
             return true;
         }
+    }
+
+    void invalidateIndexVerification() {
+        indexVerified = false;
     }
 
     private boolean detectIkPlugin() {
@@ -192,14 +201,19 @@ public class ElasticsearchProductSearchGateway implements ProductSearchGateway {
         for (int start = 0; start < upserts.size(); start += batchSize) {
             int end = Math.min(upserts.size(), start + batchSize);
             boolean lastUpsertBatch = end == upserts.size() && deleteIds.isEmpty();
-            sendBulkChunk(upserts.subList(start, end), List.of(), refresh && lastUpsertBatch);
+            sendBulkChunk(upserts.subList(start, end), List.of(), refresh && lastUpsertBatch, adminRestClient);
         }
         if (!deleteIds.isEmpty()) {
-            sendBulkChunk(List.of(), deleteIds, refresh);
+            sendBulkChunk(List.of(), deleteIds, refresh, adminRestClient);
         }
     }
 
-    private void sendBulkChunk(List<ProductSearchItem> upserts, List<Long> deleteIds, boolean refresh) {
+    void bulkIncrementalUpsert(List<ProductSearchItem> upserts, List<Long> deleteIds) {
+        ensureIndex(restClient);
+        sendBulkChunk(upserts, deleteIds, true, restClient);
+    }
+
+    private void sendBulkChunk(List<ProductSearchItem> upserts, List<Long> deleteIds, boolean refresh, RestClient client) {
         String index = properties.elasticsearch().indexName();
         StringBuilder ndjson = new StringBuilder((upserts.size() + deleteIds.size()) * 160);
         try {
@@ -237,15 +251,21 @@ public class ElasticsearchProductSearchGateway implements ProductSearchGateway {
             throw new IllegalStateException("构建ES批量索引载荷失败", error);
         }
         String uri = refresh ? "/_bulk?refresh=true" : "/_bulk";
-        byte[] bulkBytes = adminRestClient.post().uri(uri)
+        byte[] bulkBytes = client.post().uri(uri)
                 .contentType(MediaType.parseMediaType("application/x-ndjson;charset=UTF-8"))
                 .body(ndjson.toString().getBytes(StandardCharsets.UTF_8))
                 .retrieve()
                 .body(byte[].class);
-        String bulkResp = bulkBytes == null ? null : new String(bulkBytes, StandardCharsets.UTF_8);
-        if (bulkResp != null && bulkResp.contains("\"errors\":true")) {
-            throw new IllegalStateException("ES批量索引返回部分错误: "
-                    + bulkResp.substring(0, Math.min(400, bulkResp.length())));
+        if (bulkBytes == null) {
+            throw new IllegalStateException("ES批量索引未返回确认结果");
+        }
+        try {
+            JsonNode response = mapper.readTree(bulkBytes);
+            if (response == null || !response.path("errors").isBoolean() || response.path("errors").asBoolean()) {
+                throw new IllegalStateException("ES批量索引未确认全部操作成功");
+            }
+        } catch (IOException error) {
+            throw new IllegalStateException("解析ES批量索引确认结果失败", error);
         }
     }
 
@@ -262,7 +282,7 @@ public class ElasticsearchProductSearchGateway implements ProductSearchGateway {
 
     @Override
     public ProductSearchPage search(ProductSearchCriteria criteria) {
-        ensureIndex();
+        ensureIndex(restClient);
         String index = properties.elasticsearch().indexName();
         String keyword = criteria.normalizedKeyword();
         int size = criteria.size();
@@ -405,7 +425,7 @@ public class ElasticsearchProductSearchGateway implements ProductSearchGateway {
         if (prefix == null || prefix.isBlank() || limit <= 0) {
             return List.of();
         }
-        ensureIndex();
+        ensureIndex(restClient);
         String index = properties.elasticsearch().indexName();
         String clean = prefix.strip();
         ObjectNode dsl = mapper.createObjectNode();

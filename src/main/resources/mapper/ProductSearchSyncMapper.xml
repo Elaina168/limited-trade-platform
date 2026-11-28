@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.elaina.limitedtrade.product.search.ProductSearchSyncMapper">
+    <insert id="enqueue">
+        INSERT INTO product_search_pending (product_id, change_id) VALUES
+        <foreach collection="ids" item="id" separator=",">
+            (#{id}, UUID())
+        </foreach>
+        ON DUPLICATE KEY UPDATE change_id = UUID(), changed_at = CURRENT_TIMESTAMP(6)
+    </insert>
+
+    <select id="hasPending" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM product_search_pending WHERE product_id &gt; 0)
+    </select>
+
+    <select id="tryLockWorker" resultType="long">
+        SELECT product_id FROM product_search_pending WHERE product_id = 0 FOR UPDATE SKIP LOCKED
+    </select>
+
+    <select id="lockWorker" resultType="long">
+        SELECT product_id FROM product_search_pending WHERE product_id = 0 FOR UPDATE
+    </select>
+
+    <select id="findPending" resultType="com.elaina.limitedtrade.product.search.ProductSearchChange">
+        SELECT product_id, change_id FROM product_search_pending WHERE product_id &gt; 0
+        ORDER BY changed_at, product_id LIMIT #{limit}
+    </select>
+
+    <delete id="acknowledge">
+        DELETE FROM product_search_pending WHERE (product_id, change_id) IN
+        <foreach collection="changes" item="change" open="(" separator="," close=")">
+            (#{change.productId}, #{change.changeId})
+        </foreach>
+    </delete>
+</mapper>

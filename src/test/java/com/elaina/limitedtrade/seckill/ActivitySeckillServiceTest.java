@@ -5,6 +5,7 @@ import com.elaina.limitedtrade.activity.ActivityMapper;
 import com.elaina.limitedtrade.order.OrderService;
 import com.elaina.limitedtrade.order.TradeOrder;
 import com.elaina.limitedtrade.ratelimit.RedisOrderRateLimiter;
+import com.elaina.limitedtrade.user.AppUserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.math.BigDecimal;
@@ -26,6 +27,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class ActivitySeckillServiceTest {
@@ -44,7 +46,7 @@ class ActivitySeckillServiceTest {
 
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         ActivitySeckillService service = new ActivitySeckillService(
-                props, redisStore, seckillMapper, activityMapper, orderService,
+                props, redisStore, seckillMapper, activityMapper, Mockito.mock(AppUserMapper.class), orderService,
                 rateLimiter, rabbitTemplate, mapper, txManager, "test");
 
         SeckillRequest request = new SeckillRequest(10L, 1, "req-100", null, 5L);
@@ -76,19 +78,19 @@ class ActivitySeckillServiceTest {
         activity.setTotalQuantity(50);
         when(activityMapper.findById(3L)).thenReturn(activity);
 
-        ActivityPurchaseReservation saved = new ActivityPurchaseReservation();
+        var message = new ActivitySeckillMessage(7L, 3L, 10L, 1, 5L, 88L, "req-bad", LocalDateTime.now());
+        ActivityPurchaseReservation saved = ActivitySeckillService.toReservation(message, "QUEUED", null);
         saved.setId(99L);
-        saved.setStatus("QUEUED");
         when(seckillMapper.findByUserAndRequest(7L, "req-bad")).thenReturn(saved);
         when(orderService.materializeSeckillOrder(any()))
                 .thenThrow(new ResponseStatusException(HttpStatus.CONFLICT, "优惠券已失效"));
 
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         ActivitySeckillService service = new ActivitySeckillService(
-                props, redisStore, seckillMapper, activityMapper, orderService,
+                props, redisStore, seckillMapper, activityMapper, Mockito.mock(AppUserMapper.class), orderService,
                 rateLimiter, rabbitTemplate, mapper, txManager, "test");
 
-        service.consumeMessage(new ActivitySeckillMessage(7L, 3L, 10L, 1, 5L, 88L, "req-bad", LocalDateTime.now()));
+        service.consumeMessage(message);
         verify(seckillMapper).markFailed(99L, "优惠券已失效");
         verify(redisStore).release(7L, 3L, "req-bad", 1, 50, "FAILED:优惠券已失效");
     }
@@ -106,7 +108,7 @@ class ActivitySeckillServiceTest {
 
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         ActivitySeckillService service = new ActivitySeckillService(
-                props, redisStore, seckillMapper, activityMapper, orderService,
+                props, redisStore, seckillMapper, activityMapper, Mockito.mock(AppUserMapper.class), orderService,
                 rateLimiter, rabbitTemplate, mapper, txManager, "test");
 
         SeckillRequest request = new SeckillRequest(10L, 1, "req-limit", null, 5L);
@@ -115,5 +117,45 @@ class ActivitySeckillServiceTest {
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.submit(7L, 3L, request));
         assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+    }
+
+    @Test
+    void persistedFingerprintWinsAfterRedisStateExpires() {
+        var props = new SeckillProperties(true, "test:seckill", 3600, 1000, 5000);
+        var redisStore = Mockito.mock(ActivitySeckillRedisStore.class);
+        var reservations = Mockito.mock(ActivitySeckillMapper.class);
+        var orders = Mockito.mock(OrderService.class);
+        var rabbit = Mockito.mock(RabbitTemplate.class);
+        var service = new ActivitySeckillService(props, redisStore, reservations, Mockito.mock(ActivityMapper.class),
+                Mockito.mock(AppUserMapper.class), orders, Mockito.mock(RedisOrderRateLimiter.class), rabbit,
+                new ObjectMapper(), Mockito.mock(PlatformTransactionManager.class), "test");
+        var request = new SeckillRequest(10L, 1, "durable-key", 88L, 5L);
+        when(reservations.hasSubmittedRequest(7L, "durable-key")).thenReturn(true);
+        assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
+                () -> service.submit(7L, 3L, request)).getStatusCode());
+
+        var message = new ActivitySeckillMessage(7L, 3L, 10L, 1, 5L, 88L, "durable-key", LocalDateTime.now());
+        var saved = ActivitySeckillService.toReservation(message, "CREATED", null);
+        saved.setOrderId(100L);
+        var order = new TradeOrder();
+        order.setId(100L);
+        order.setItems(List.of());
+        when(reservations.findByUserAndRequest(7L, "durable-key")).thenReturn(saved);
+        when(orders.getSeckillOrder(7L, saved)).thenReturn(order);
+
+        var replay = service.submit(7L, 3L, request);
+        assertEquals(HttpStatus.OK, replay.httpStatus());
+        assertEquals(100L, replay.body().orderId());
+        assertEquals(100L, service.getResult(7L, "durable-key").orderId());
+        assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
+                () -> service.submit(7L, 4L, request)).getStatusCode());
+        for (var changed : List.of(new SeckillRequest(11L, 1, "durable-key", 88L, 5L),
+                new SeckillRequest(10L, 2, "durable-key", 88L, 5L),
+                new SeckillRequest(10L, 1, "durable-key", 89L, 5L),
+                new SeckillRequest(10L, 1, "durable-key", 88L, 6L))) {
+            assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
+                    () -> service.submit(7L, 3L, changed)).getStatusCode());
+        }
+        verifyNoInteractions(redisStore, rabbit);
     }
 }

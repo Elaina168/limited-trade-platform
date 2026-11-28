@@ -203,3 +203,93 @@ test('异步秒杀最终返回 FAILED 时清除待定意图并抛出原因', asy
   )
   assert.equal(checkout.pending, null)
 })
+
+test('恢复已受理的秒杀时越过短轮询窗口并在弱网后成单，全程只查询结果', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  saved.set('limited-market:vue-order-intent:31', JSON.stringify({
+    path: '/api/activities/9/seckill', data: { productId: 3, quantity: 1, addressId: 19, userCouponId: null },
+    requestId: 'long-queue', queued: true, purchaseRoute: '/activities/9',
+  }))
+  let polls = 0
+  const { checkout } = await store()
+  globalThis.fetch = async (input, options) => {
+    assert.equal(options?.method, undefined)
+    assert.equal(String(input), '/api/activities/seckill/result/long-queue')
+    polls++
+    if (polls === 11) throw new TypeError('offline')
+    if (polls === 12) return json({}, 404)
+    if (polls < 14) return json({ requestId: 'long-queue', status: 'QUEUED' })
+    return json({ requestId: 'long-queue', status: 'CREATED', orderId: 501, order: { id: 501 } })
+  }
+  const recovery = checkout.recoverPending()
+  for (let i = 0; i < 14; i++) {
+    t.mock.timers.tick(10_000)
+    await new Promise(resolve => setImmediate(resolve))
+    if (i === 10) assert.ok(checkout.pending?.requestId === 'long-queue')
+    if (i === 11) void checkout.recoverPending()
+  }
+  await recovery
+  assert.equal(polls, 14)
+  assert.equal(checkout.pending, null)
+  assert.equal(checkout.recoveredOrder?.id, 501)
+  assert.equal(checkout.takeSeckillPayment('/activities/9'), 501)
+  assert.equal(checkout.takeSeckillPayment('/activities/9'), undefined)
+})
+
+test('切换账号立即停止已受理秒杀的轮询并保留原账号的恢复标识', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const savedIntent = JSON.stringify({
+    path: '/api/activities/9/seckill', data: { productId: 3, quantity: 1, addressId: 19, userCouponId: null },
+    requestId: 'switch-queue', queued: true, purchaseRoute: '/activities/9',
+  })
+  saved.set('limited-market:vue-order-intent:31', savedIntent)
+  const { auth, checkout } = await store()
+  let signal: AbortSignal | null | undefined
+  globalThis.fetch = async (_, options) => {
+    signal = options?.signal
+    return new Promise((_, reject) => signal?.addEventListener('abort', () => reject(signal!.reason), { once: true }))
+  }
+  const recovery = checkout.recoverPending()
+  t.mock.timers.tick(1000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(signal?.aborted, false)
+  advanceSession()
+  auth.user = { id: 32, username: 'other', role: 'USER' }
+  assert.equal(signal?.aborted, true)
+  await recovery
+  assert.equal(checkout.pending, null)
+  assert.equal(checkout.recoveredOrder, null)
+  assert.equal(saved.get('limited-market:vue-order-intent:31'), savedIntent)
+})
+
+test('秒杀提交回执丢失但结果接口已确认成单时不重发写请求', async () => {
+  let requestId: string
+  let posts = 0
+  globalThis.fetch = async (input, options) => {
+    const path = String(input)
+    if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'current' })
+    if (options?.method === 'POST') {
+      posts++
+      requestId = JSON.parse(String(options.body)).requestId
+      throw new TypeError('连接在写入后断开')
+    }
+    assert.equal(path, '/api/activities/seckill/result/' + requestId)
+    return json({ requestId, status: 'CREATED', orderId: 501, order: { id: 501 } })
+  }
+  const { checkout } = await store()
+  const order = await checkout.submitSeckill(9, { productId: 3, quantity: 1, addressId: 19, userCouponId: null })
+  assert.equal(order.id, 501)
+  assert.equal(posts, 1)
+  assert.equal(checkout.pending, null)
+})
+
+test('秒杀意图只能由秒杀结果确认，订单列表中的同标识普通订单不清除排队状态', async () => {
+  saved.set('limited-market:vue-order-intent:31', JSON.stringify({
+    path: '/api/activities/9/seckill', data: { productId: 3, quantity: 1, addressId: 19, userCouponId: null },
+    requestId: 'cross-route', queued: true, purchaseRoute: '/activities/9',
+  }))
+  const { checkout } = await store()
+  checkout.confirmKnownOrder({ id: 19, requestId: 'cross-route' } as import('../src/types/checkout.ts').Order)
+  assert.equal(checkout.pending?.requestId, 'cross-route')
+  assert.equal(checkout.recoveredOrder, null)
+})

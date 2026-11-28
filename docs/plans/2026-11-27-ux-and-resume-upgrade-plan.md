@@ -168,22 +168,22 @@
 | 中间件依赖 | **Nacos**（服务发现 + 配置中心）、**Sentinel**（限流/熔断/热点保护）、MySQL（独立库 `cloud_mall_lab`，按服务逻辑分库或表前缀隔离）、Redis、RabbitMQ |
 
 ### 具体实施步骤
-- [ ] **6.1 底座替换：Nacos + OpenFeign + Sentinel + Gateway**
+- [x] **6.1 底座替换：Nacos + OpenFeign + Sentinel + Gateway**
   - 移除原 `registry`（Eureka）与 `config-server`，提供本机便携 Nacos 单机模式一键启停脚本（复用 `scripts/lab.ps1` manifest 安全管理进程）。
   - 所有服务接入 Nacos 注册发现与配置中心：演示通过 `@RefreshScope` / `@ConfigurationProperties` 在线修改营销文案、降级开关与限流规则，**不重启 JVM 秒级热生效**。
   - 使用 **OpenFeign**（配连接/读取超时、`X-Trace-Id` 拦截器透传、`FallbackFactory` 降级）替代原手写 `RestClient`。
   - 接入 **Sentinel**：配置网关层与服务层 QPS 限流、下游慢调用比例熔断、异常比例熔断及热门 `productId` 热点参数限流。
-- [ ] **6.2 核心亮点 1：跨服务下单与“库存工作单 + RabbitMQ 延时反查”双向兜底最终一致性**
+- [x] **6.2 核心亮点 1：跨服务下单与“库存工作单 + RabbitMQ 延时反查”双向兜底最终一致性**
   - `order-service` 创建订单时，先写本地订单记录，再通过 OpenFeign 调用 `product-stock-service` 锁定库存（写入 `stock_lock_task` 工作单 `LOCKED`，同时向 RabbitMQ 投递一条延时检查消息，如延时晚于订单落库/关单窗口）及调用 `marketing-service` 占用优惠券。
   - **异常反向兜底**：若 `marketing-service` 核销失败或 `order-service` 在扣完库存后发生异常/宕机回滚，订单未落库；当 `product-stock-service` 收到库存延时消息后，通过 OpenFeign 反查 `order-service` 订单状态——若订单**不存在**或状态已变为 **`CANCELED / CLOSED`**，则依据工作单状态机**幂等解锁归还库存**（`LOCKED -> RELEASED`）；正常超时未支付关单也通过 MQ 触发幂等解锁，形成双向闭环，彻底杜绝跨服务“少扣/死锁库存”。
-- [ ] **6.3 核心亮点 2：商品聚合详情页 `CompletableFuture` 跨服务并行编排与局部降级**
+- [x] **6.3 核心亮点 2：商品聚合详情页 `CompletableFuture` 跨服务并行编排与局部降级**
   - 在 `order-service`（或独立 `bff-aggregation` 接口 `GET /api/aggregate/products/{id}`）使用 **`CompletableFuture` + 自定义有界隔离线程池**，并行通过 OpenFeign 拉取：
     1. `product-stock-service`：商品信息与实时可售库存；
     2. `marketing-service`：当前关联限时活动信息；
     3. `marketing-service`：该商品可领满减优惠券列表。
   - **局部容错降级**：若 `marketing-service` 慢调用或故障触发 Sentinel 熔断，活动与优惠券字段降级为空列表并标记 `marketingDegraded=true`，**商品主信息依然正常返回 200**，不阻断原价浏览与购买。
   - 实测对比“串行 Feign 调用 vs `CompletableFuture` 并行编排”在模拟下游 RT 下的接口 P50/P95 延迟下降比例与吞吐提升倍数。
-- [ ] **6.4 全自动真实进程验收脚本与报告**
+- [x] **6.4 全自动真实进程验收脚本与报告**
   - 更新 `spring-cloud-lab/scripts/verify.py`：自动拉起集群并逐项验证：双实例负载均衡、`X-Trace-Id` 跨四进程日志关联、Nacos 免重启配置热更新、并行聚合耗时优于串行且营销故障局部降级可用、下单模拟下游报错后库存经 MQ 延时反查自动归还（0 脏占用）、Sentinel 慢调用熔断与半开恢复。
   - 将完整架构图、状态机说明与实测数据写入 `spring-cloud-lab/docs/design.md` 与 `spring-cloud-lab/docs/results.md`。
 

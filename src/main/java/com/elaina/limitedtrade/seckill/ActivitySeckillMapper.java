@@ -9,6 +9,10 @@ public interface ActivitySeckillMapper {
 
     int insertIgnore(ActivityPurchaseReservation reservation);
 
+    boolean hasSubmittedRequest(@Param("userId") long userId, @Param("requestId") String requestId);
+
+    boolean hasOrderRequest(@Param("userId") long userId, @Param("requestId") String requestId);
+
     ActivityPurchaseReservation findByUserAndRequest(@Param("userId") long userId,
                                                      @Param("requestId") String requestId);
 
