@@ -16,6 +16,9 @@
     <version>0.0.1-SNAPSHOT</version>
 
     <properties>
+        <build.git.commit>unknown</build.git.commit>
+        <build.release.label>local</build.release.label>
+        <build.required.migration>018_product_search_sync</build.required.migration>
         <java.version>21</java.version>
         <mybatis-spring-boot.version>3.0.5</mybatis-spring-boot.version>
         <springdoc.version>2.8.17</springdoc.version>
@@ -142,7 +145,9 @@
                         </goals>
                         <configuration>
                             <additionalProperties>
-                                <requiredMigration>018_product_search_sync</requiredMigration>
+                                <git.commit>${build.git.commit}</git.commit>
+                                <releaseLabel>${build.release.label}</releaseLabel>
+                                <requiredMigration>${build.required.migration}</requiredMigration>
                             </additionalProperties>
                         </configuration>
                     </execution>

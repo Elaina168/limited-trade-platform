@@ -2,7 +2,6 @@
 -- 同一库重复执行不补库存、名额或续期；已有真实和演示记录都保留。
 CREATE TEMPORARY TABLE demo_scale_lock (ok INT NOT NULL CHECK (ok = 1));
 INSERT INTO demo_scale_lock VALUES (GET_LOCK(CONCAT(DATABASE(), ':demo-catalog-scale'), 10));
-START TRANSACTION;
 SET @scale_now = NOW();
 
 CREATE TEMPORARY TABLE demo_scale_family (
@@ -24,11 +23,16 @@ INSERT INTO demo_scale_family VALUES
 (10,'宠物用品','宠物饮水碗','梳理手套','便携拾便袋',19),
 (11,'绿植园艺','自吸水花盆','园艺修枝剪','浇花喷壶',19);
 
-CREATE TEMPORARY TABLE demo_scale_product (
-    n INT PRIMARY KEY, category_name VARCHAR(100) NOT NULL, product_name VARCHAR(100) NOT NULL,
-    price DECIMAL(10,2) NOT NULL, stock INT NOT NULL
-);
+-- 继承目标库中名称列的排序规则，兼容不同方式初始化的数据库。
+CREATE TEMPORARY TABLE demo_scale_product AS
+SELECT c.name AS category_name, p.name AS product_name
+FROM product_category c CROSS JOIN product p WHERE FALSE;
+ALTER TABLE demo_scale_product
+    ADD n INT PRIMARY KEY,
+    ADD price DECIMAL(10,2) NOT NULL,
+    ADD stock INT NOT NULL;
 INSERT INTO demo_scale_product
+    (n, category_name, product_name, price, stock)
 WITH digits AS (
     SELECT 0 AS d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
     UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9
@@ -44,6 +48,7 @@ SELECT n, CONCAT('扩展演示·', f.category_name),
 FROM numbers JOIN demo_scale_family f ON f.id = n DIV 60
 WHERE n < 720;
 
+START TRANSACTION;
 INSERT INTO product_category(name)
 SELECT DISTINCT d.category_name FROM demo_scale_product d
 WHERE NOT EXISTS (SELECT 1 FROM product_category c WHERE c.name = d.category_name);

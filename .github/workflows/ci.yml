@@ -21,7 +21,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - run: mvn --batch-mode --no-transfer-progress -Pci verify
+      - run: mvn --batch-mode --no-transfer-progress "-Dbuild.git.commit=$GITHUB_SHA" -Pci verify
 
   frontend:
     name: Vue 测试、类型检查与构建

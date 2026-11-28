@@ -1,16 +1,15 @@
 package com.elaina.limitedtrade.system;
 
 import com.elaina.limitedtrade.auth.SecurityConfig;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.availability.ApplicationAvailability;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -36,6 +35,9 @@ class AdminReleaseControllerTest {
     @MockitoBean
     private ReleaseInfoService releaseInfoService;
 
+    @MockitoBean
+    private ApplicationAvailability availability;
+
     private static SchemaMigrationMapper fullSchemaMapper() {
         SchemaMigrationMapper mapper = Mockito.mock(SchemaMigrationMapper.class);
         when(mapper.findPresentTables()).thenReturn(List.of(
@@ -53,23 +55,17 @@ class AdminReleaseControllerTest {
     }
 
     @Test
-    void serviceDetectsAllEighteenMigrationsAndRejectsUnappliedBreakingMigration(@TempDir Path tempDir) throws Exception {
-        Path gitDir = tempDir.resolve(".git");
-        Files.createDirectories(gitDir.resolve("refs/heads/codex"));
-        Files.writeString(gitDir.resolve("HEAD"), "ref: refs/heads/codex/bootstrap-boot\n");
-        Files.writeString(gitDir.resolve("refs/heads/codex/bootstrap-boot"), "2e5d310abcdef1234567890\n");
-        assertEquals("2e5d310abcdef1234567890", ReleaseInfoService.resolveGitSha("", Optional.empty(), gitDir));
-
+    void serviceDetectsAllEighteenMigrationsAndRejectsUnappliedBreakingMigration() {
         Properties props = new Properties();
         props.setProperty("artifact", "limited-trade-platform");
         props.setProperty("version", "0.0.1-SNAPSHOT");
         props.setProperty("time", "2026-11-28T05:00:00Z");
-        BuildProperties buildProps = new BuildProperties(props);
-
+        props.setProperty("git.commit", "2e5d310");
+        props.setProperty("releaseLabel", "2026.11.28-r1");
+        props.setProperty("requiredMigration", "018_product_search_sync");
         ReleaseInfoService okService = new ReleaseInfoService(
                 fullSchemaMapper(),
-                new ReleaseProperties("2e5d310", "2026.11.28-r1", "018_product_search_sync"),
-                Optional.of(buildProps),
+                Optional.of(new BuildProperties(props)),
                 "drill-node-a", "mysql", true, true, true, true, true, false);
         ReleaseInfoService.ReleaseSnapshot ok = okService.snapshot();
         assertTrue(ok.database().compatible());
@@ -78,10 +74,10 @@ class AdminReleaseControllerTest {
         assertEquals("2e5d310", ok.application().gitSha());
         assertEquals("2026.11.28-r1", ok.application().releaseLabel());
 
+        props.setProperty("requiredMigration", "019_breaking_schema_drill");
         ReleaseInfoService incompatibleService = new ReleaseInfoService(
                 fullSchemaMapper(),
-                new ReleaseProperties("bad9999", "2026.11.28-r3-bad", "019_breaking_schema_drill"),
-                Optional.of(buildProps),
+                Optional.of(new BuildProperties(props)),
                 "drill-node-a", "mysql", true, true, true, true, true, false);
         ReleaseInfoService.ReleaseSnapshot bad = incompatibleService.snapshot();
         assertFalse(bad.database().compatible());
@@ -97,6 +93,18 @@ class AdminReleaseControllerTest {
     @WithMockUser(roles = "USER")
     void nonAdminIsForbidden() throws Exception {
         mockMvc.perform(get("/api/admin/operations/release")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void anonymousReadinessRequiresBothApplicationAndSchemaReadiness() throws Exception {
+        when(availability.getReadinessState()).thenReturn(ReadinessState.REFUSING_TRAFFIC, ReadinessState.ACCEPTING_TRAFFIC);
+        when(releaseInfoService.databaseState()).thenReturn(
+                new ReleaseInfoService.DatabaseMigrationState("018", "017", List.of(), List.of("018"), false),
+                new ReleaseInfoService.DatabaseMigrationState("018", "018", List.of("018"), List.of(), true));
+
+        mockMvc.perform(get("/internal/ready")).andExpect(status().isServiceUnavailable());
+        mockMvc.perform(get("/internal/ready")).andExpect(status().isServiceUnavailable());
+        mockMvc.perform(get("/internal/ready")).andExpect(status().isOk());
     }
 
     @Test

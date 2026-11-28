@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # 全新容器数据卷的初始化；逐个执行，任一SQL文件失败就立即退出。
+marker=/var/lib/mysql/.bootstrap-incomplete
+touch "$marker"
 export MYSQL_PWD="${MYSQL_ROOT_PASSWORD}"
 for script in \
     schema.sql \
@@ -30,3 +32,4 @@ do
         --default-character-set=utf8mb4 < "/bootstrap/${script}"
 done
 unset MYSQL_PWD
+rm "$marker"

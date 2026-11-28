@@ -13,7 +13,7 @@
 | 服务 | 用途 | 健康检查覆盖范围 |
 |---|---|---|
 | web | Nginx 托管 Vue dist，代理同源 API 和 SSE | `/nginx-health`，只检查 Nginx |
-| app | 非 root 用户运行 Spring Boot JAR | `/api/ping`，检查 Java HTTP 响应 |
+| app | 非 root 用户运行 Spring Boot JAR | `/internal/ready`，检查应用就绪及数据库迁移兼容性 |
 | mysql | 订单、账号、规格及 Agent 会话持久化 | 使用应用账户检查活动券表和两张 Agent 会话表可查询 |
 | redis | 缓存和下单限流，AOF 数据保存在命名卷 | Redis `PING` |
 | rabbitmq | 接收超时订单消息，保留有状态队列 | RabbitMQ 节点运行检查 |
@@ -26,46 +26,43 @@ Vue 容器复用 `deploy/nginx-vue/vue-http.conf`、`vue-server.conf` 与 `api-p
 
 Temurin、MySQL、Redis、RabbitMQ 延用既有 digest；Nginx 1.30.7 Alpine 也使用固定镜像索引。[Nginx 官方镜像清单](https://raw.githubusercontent.com/docker-library/repo-info/master/repos/nginx/remote/1.30.7-alpine.md)
 
-两个镜像的上下文各用白名单。Java 镜像接收 JAR 和健康脚本，Nginx 镜像接收 dist 和公开的网关配置。数据库和 RabbitMQ 密码由宿主机的外置配置提供，应用只读挂载自己的两个 properties 文件。
+两个镜像分别在构建阶段用 Maven 打包后端、用锁文件安装依赖并打包 Vue。白名单排除宿主机上的产物、依赖缓存和配置。运行镜像只接收构建产物和入口配置。
 
 ## 启动、查看和停止
 
-有 Docker 运行环境后，在 Windows 先构建 JAR 和 dist。根目录执行 `mvn -Pci verify`，在 `frontend` 执行 `npm ci` 和 `npm run build`。首次部署可用 `scripts/prepare-containers.ps1` 生成默认配置，已有默认配置则复用。下列命令在 WSL 的仓库根目录执行，使用具备 Docker 权限的账号。
+在 Git 检出的根目录运行。首次构建需要 Docker 能访问镜像、Maven 和 npm 仓库。下列启动方式使用本机演示凭据，入口为 `http://127.0.0.1:18084`。
 
 ```bash
-docker compose --env-file .env.docker config --quiet
-docker compose --env-file .env.docker up --build -d --wait --wait-timeout 240
-docker compose --env-file .env.docker ps
-docker compose --env-file .env.docker logs --tail 50 web app
-docker compose --env-file .env.docker stop
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail 50 web app
+docker compose stop
 ```
+
+已有卷继续用 `docker compose --env-file .env.docker up -d --build` 并沿用原密码。共享环境需要自有数据库和 RabbitMQ 凭据，可用 `scripts/prepare-containers.ps1` 生成新部署的环境文件。需要真实助手时，通过未跟踪的 `.env` 或运行环境提供 `DEEPSEEK_API_KEY`。提供有效密钥后自动启用助手，显式 `AGENT_ENABLED=false` 可关闭。
 
 `stop` 保留容器，`down` 移除容器和网络并保留命名卷。用 `down` 后再次 `up` 可验证重建后的数据。查看 Compose 配置时使用 `config --quiet`，避免将插值后的认证信息写入日志。
 
-全新 MySQL 卷自动依次执行 `schema.sql`、002–018、种子和演示脚本；已有卷由 MySQL 入口跳过初始化。若旧卷缺后续迁移，先核对缺表及备份，再用相应卷的现有凭据进入 MySQL，对该容器库显式应用缺失的 `/bootstrap/0xx_*.sql`。`up --build` 只负责重建服务，已有库的迁移独立管理。需要容器内 Elasticsearch 检索时，可叠加 `--profile es` 与 `SEARCH_MODE=es` 启动可选单节点 ES 8.17.2 服务。
+全新 MySQL 卷依次执行 `schema.sql`、002–018、种子和演示脚本。扩展数据的临时列继承商品和分类名称的排序规则。首次导入若中断，初始化标记会阻止该卷随后被判为健康。已初始化卷独立管理迁移，缺后续迁移时需先核对和备份，再应用缺失脚本。按需使用 `--profile es` 与 `SEARCH_MODE=es` 启动 Elasticsearch。
 
 ## 独立验收与 CI
 
-在 Windows 根目录生成一次性项目配置：
-
-```powershell
-.\scripts\prepare-containers.ps1 -Instance trade-check-local01
-```
-
-在 WSL 的同一仓库根目录，选择空闲端口并运行：
+在 WSL 的仓库根目录，选择新的项目名和空闲端口：
 
 ```bash
 CONTAINER_WEB_PORT=28084 CONTAINER_RABBITMQ_PORT=25673 \
   python3 scripts/verify-compose.py trade-check-local01
 ```
 
-`-Instance` 将独立配置写入 `config/container/<名称>`，与已有默认配置各自保存。验证器在启动前拒绝已有容器或数据卷的项目名，然后检查五服务启动、Vue 页与同源 API、注册下单、幂等、Redis 缓存和 RabbitMQ 投递状态。停止与启动后重新登录核对订单，再移除容器并重建，核对新 MySQL 容器仍能读取旧订单和库存。Redis 故障演练检查应用探针仍能响应、订单写入被拒绝、恢复后能确认原订单和取消。脚本收尾保留本轮卷供复查。
+验证器使用默认演示配置，拒绝已有容器或数据卷的项目名。它核对五服务启动、扩展商品和券导入、交易履约、助手 SSE 及重建后数据。Redis 演练核对下单拒绝和恢复后的订单状态。脚本移除本轮容器与网络，保留命名卷供复查。
 
-`.github/workflows/compose-integration.yml` 在 GitHub 托管 Linux runner 上构建 JAR 和 dist，生成隔离项目，调用同一个验收脚本。工作流显式触发，默认确定性 CI 的入口继续独立。容器默认关闭 Agent，验收没有真实模型步骤。
+`.github/workflows/compose-integration.yml` 手动触发并调用同一个验收脚本。脚本注入本地模拟模型和测试密钥，默认确定性 CI 独立运行。
 
 ## 验收进度
 
-2026-11-28 完成本机 WSL2（`Ubuntu-22.04`）Docker 真实安装与全新空卷全链路验收：
+2026-11-28 复验 `trade-check-fix4634247a` 退出码为 0。两套镜像从源码构建，五个服务均健康。全新 MySQL 卷导入 720 件扩展商品、120 个扩展活动和 240 种扩展优惠券。幂等下单、异步秒杀、支付发货收货、助手流式查单、启停及重建持久化、Redis 故障拒绝下单均通过。报告位于 `tools/compose-verification/trade-check-fix4634247a/summary.json`。
+
+同日早期 WSL2（`Ubuntu-22.04`）Docker 安装及验收记录：
 
 - **实际安装与镜像核验**：安装 `Docker Engine 29.1.3`（`29.1.3-0ubuntu3~22.04.2`）、`Docker Compose 2.40.3` 与 `Buildx 0.30.1`，拉取并核对 `eclipse-temurin:21-jre-jammy`、`nginx:1.30.7-alpine`、`mysql:8.0`、`redis:7.4-alpine`、`rabbitmq:4.3.6-management` 五个固定 digest 基础镜像。
 - **全新空卷隔离验收（`trade-check-phase7`）**：使用 `pwsh -NoProfile -File scripts/prepare-containers.ps1 -Instance trade-check-phase7` 生成独立随机凭据，在 WSL2 执行 `CONTAINER_WEB_PORT=28084 CONTAINER_RABBITMQ_PORT=25673 python3 scripts/verify-compose.py trade-check-phase7`，退出码 `0`，留存证据于 `tools/compose-verification/trade-check-phase7/summary.json`：

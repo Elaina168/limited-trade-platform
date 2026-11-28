@@ -80,10 +80,6 @@ springdoc:
     disable-swagger-default-url: true
 
 app:
-  release:
-    git-sha: ${APP_GIT_SHA:}
-    label: ${APP_RELEASE_LABEL:local}
-    required-migration: ${APP_REQUIRED_MIGRATION:018_product_search_sync}
   agent:
     enabled: ${AGENT_ENABLED:false}
     api-key: ${DEEPSEEK_API_KEY:}

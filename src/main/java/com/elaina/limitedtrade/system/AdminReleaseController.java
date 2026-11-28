@@ -2,8 +2,11 @@ package com.elaina.limitedtrade.system;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.boot.availability.ApplicationAvailability;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -12,9 +15,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminReleaseController {
 
     private final ReleaseInfoService releaseInfoService;
+    private final ApplicationAvailability availability;
+    private final Optional<ReleaseTrafficFilter> trafficFilter;
 
-    public AdminReleaseController(ReleaseInfoService releaseInfoService) {
+    public AdminReleaseController(ReleaseInfoService releaseInfoService, ApplicationAvailability availability,
+                                  Optional<ReleaseTrafficFilter> trafficFilter) {
         this.releaseInfoService = releaseInfoService;
+        this.availability = availability;
+        this.trafficFilter = trafficFilter;
+    }
+
+    @GetMapping("/internal/ready")
+    public ResponseEntity<Void> readiness() {
+        boolean ready = availability.getReadinessState() == ReadinessState.ACCEPTING_TRAFFIC
+                && trafficFilter.map(ReleaseTrafficFilter::acceptsTraffic).orElse(true)
+                && releaseInfoService.databaseState().compatible();
+        return ResponseEntity.status(ready ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).build();
     }
 
     @GetMapping("/api/admin/operations/release")

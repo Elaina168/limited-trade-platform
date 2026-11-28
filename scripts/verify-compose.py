@@ -125,28 +125,21 @@ def make_client(base_url):
 
 def verify(project):
     root = Path(__file__).resolve().parent.parent
-    config = root / "config" / "container" / project
-    env_file = config / ".env.docker"
-    if not env_file.is_file():
-        raise SystemExit("请先为该项目生成独立配置")
-
     git_sha = subprocess.run(
-        ["git", "-c", "safe.directory=*", "rev-parse", "--short=12", "HEAD"],
-        cwd=root, capture_output=True, text=True, check=False,
-    ).stdout.strip() or "compose-local"
+        ["git", "-c", f"safe.directory={root.as_posix()}", "rev-parse", "HEAD"],
+        cwd=root, capture_output=True, text=True, check=True,
+    ).stdout.strip()
 
     model_server, model_state = start_mock_model()
     model_port = model_server.server_address[1]
 
-    # 显式选用本轮配置，避免父进程的同名变量覆盖环境文件。
+    # 本轮覆盖模型配置，并使用干净检出的默认中间件配置。
     env = os.environ.copy()
-    for key in ("MYSQL_ROOT_PASSWORD", "MYSQL_PASSWORD", "RABBITMQ_DEFAULT_PASS"):
+    for key in ("MYSQL_ROOT_PASSWORD", "MYSQL_PASSWORD", "RABBITMQ_DEFAULT_PASS", "APP_GIT_SHA",
+                "APP_REQUIRED_MIGRATION", "APP_IMAGE_TAG", "AGENT_ENABLED", "AGENT_RAG_ENABLED"):
         env.pop(key, None)
-    env["CONTAINER_CONFIG_DIR"] = str(config)
-    env["APP_GIT_SHA"] = git_sha
     env["APP_RELEASE_LABEL"] = f"compose-{project}"
     env["SECKILL_ENABLED"] = "true"
-    env["AGENT_ENABLED"] = "true"
     env["DEEPSEEK_API_KEY"] = "compose-local-mock"
     env["APP_SPRING_JSON"] = json.dumps({
         "app": {
@@ -157,18 +150,18 @@ def verify(project):
             }
         }
     })
-    prefix = ["docker", "compose", "--env-file", str(env_file), "-p", project]
+    prefix = ["docker", "compose", "--env-file", os.devnull, "-p", project]
 
     def compose(*args, capture=False, check=True):
         return subprocess.run([*prefix, *args], cwd=root, env=env, check=check,
-                              text=True, encoding="utf-8", timeout=420,
+                              text=True, encoding="utf-8", timeout=1200 if "--build" in args else 420,
                               stdout=subprocess.PIPE if capture else None).stdout
 
     def sql(statement):
         return compose(
             "exec", "-T", "mysql", "sh", "-c",
             'MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u "$MYSQL_USER" '
-            '-D "$MYSQL_DATABASE" --batch --skip-column-names -e "$1"',
+            '-D "$MYSQL_DATABASE" --default-character-set=utf8mb4 --batch --skip-column-names -e "$1"',
             "mysql", statement, capture=True,
         ).strip()
 
@@ -214,6 +207,9 @@ def verify(project):
         headers, catalog = buyer_req("/api/products", 200)
         assert headers["Cache-Control"] == "no-store"
         assert any(product["id"] == 1 for product in json.loads(catalog))
+        assert int(sql("SELECT COUNT(*) FROM product WHERE name LIKE '扩展演示·%'")) == 720
+        assert int(sql("SELECT COUNT(*) FROM activity WHERE name LIKE '扩展演示·%'")) == 120
+        assert int(sql("SELECT COUNT(*) FROM activity_coupon WHERE name LIKE '扩展演示·%'")) == 240
         assert compose("exec", "-T", "redis", "redis-cli", "EXISTS",
                        "limited-trade:product:on-sale:v1", capture=True).strip() == "1"
 
@@ -234,6 +230,8 @@ def verify(project):
         # 核对发布版本快照与迁移完整性
         release_info = json.loads(admin_req("/api/admin/operations/release", 200)[1])
         assert release_info["application"]["gitSha"] == git_sha
+        assert release_info["application"]["releaseLabel"] == env["APP_RELEASE_LABEL"]
+        assert release_info["features"]["agentEnabled"] is True
         assert release_info["database"]["compatible"] is True
         assert release_info["database"]["latestDetectedMigration"] == "018_product_search_sync"
         report["releaseSnapshot"] = release_info

@@ -33,39 +33,36 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        APP_GIT_SHA: ${APP_GIT_SHA:-unknown}
+        APP_GIT_SHA: ${APP_GIT_SHA:-}
         APP_RELEASE_LABEL: ${APP_RELEASE_LABEL:-compose}
+        APP_REQUIRED_MIGRATION: ${APP_REQUIRED_MIGRATION:-018_product_search_sync}
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      # 单机演示凭据只用于本机；已有卷继续通过原环境文件提供凭据。
+      SPRING_CONFIG_ON_NOT_FOUND: ignore
+      DB_URL: jdbc:mysql://mysql:3306/limited_trade_platform?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      DB_USERNAME: limited_trade
+      DB_PASSWORD: ${MYSQL_PASSWORD:-local-demo-db}
+      MQ_HOST: rabbitmq
+      MQ_PORT: "5672"
+      MQ_USERNAME: limited_trade
+      MQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-local-demo-mq}
+      MQ_VIRTUAL_HOST: limited-trade
+      APP_RELEASE_GATE_TRAFFIC: "true"
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
       APP_INSTANCE_ID: ${APP_INSTANCE_ID:-container-app}
-      APP_GIT_SHA: ${APP_GIT_SHA:-unknown}
-      APP_RELEASE_LABEL: ${APP_RELEASE_LABEL:-compose}
-      APP_REQUIRED_MIGRATION: ${APP_REQUIRED_MIGRATION:-018_product_search_sync}
       SECKILL_ENABLED: ${SECKILL_ENABLED:-true}
       SEARCH_MODE: ${SEARCH_MODE:-mysql}
       ELASTICSEARCH_BASE_URL: ${ELASTICSEARCH_BASE_URL:-http://elasticsearch:9200}
-      AGENT_ENABLED: ${AGENT_ENABLED:-false}
+      AGENT_ENABLED: ${AGENT_ENABLED:-}
       AGENT_RAG_ENABLED: ${AGENT_RAG_ENABLED:-false}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       SPRING_APPLICATION_JSON: ${APP_SPRING_JSON:-{}}
       JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Shanghai -XX:MaxRAMPercentage=75.0"
     volumes:
-      - type: bind
-        source: ${CONTAINER_CONFIG_DIR:-./config/container}/db.properties
-        target: /app/config/db.properties
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${CONTAINER_CONFIG_DIR:-./config/container}/rabbitmq.properties
-        target: /app/config/rabbitmq.properties
-        read_only: true
-        bind:
-          create_host_path: false
       - app_logs:/app/logs
     depends_on:
       mysql:
@@ -80,10 +77,10 @@ services:
     image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?先运行scripts/prepare-containers.ps1}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local-demo-root}
       MYSQL_DATABASE: limited_trade_platform
       MYSQL_USER: limited_trade
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?先运行scripts/prepare-containers.ps1}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-local-demo-db}
       TZ: Asia/Shanghai
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     volumes:
@@ -101,7 +98,7 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --host=127.0.0.1 --user=limited_trade --database=limited_trade_platform --batch --skip-column-names --execute='SELECT 1 FROM activity_coupon LIMIT 0; SELECT 1 FROM agent_conversation_visible_turn LIMIT 0; SELECT 1 FROM activity_purchase_reservation LIMIT 0; SELECT 1 FROM product_search_pending LIMIT 0'"]
+      test: ["CMD-SHELL", "test ! -e /var/lib/mysql/.bootstrap-incomplete && MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --host=127.0.0.1 --user=limited_trade --database=limited_trade_platform --batch --skip-column-names --execute='SELECT 1 FROM activity_coupon LIMIT 0; SELECT 1 FROM agent_conversation_visible_turn LIMIT 0; SELECT 1 FROM activity_purchase_reservation LIMIT 0; SELECT 1 FROM product_search_pending LIMIT 0'"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -127,7 +124,7 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: limited_trade
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?先运行scripts/prepare-containers.ps1}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-local-demo-mq}
       RABBITMQ_DEFAULT_VHOST: limited-trade
       TZ: Asia/Shanghai
     ports:

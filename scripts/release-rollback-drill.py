@@ -1,5 +1,6 @@
 """阶段 7.2 / 补强 15：隔离真实环境发布升级、不兼容版本拦截回滚、MQ积压告警触发与恢复清零演练。"""
 
+import argparse
 from datetime import datetime, timezone
 import hashlib
 import http.cookiejar
@@ -15,10 +16,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-JAR = ROOT / "target" / "limited-trade-platform-0.0.1-SNAPSHOT.jar"
 MYSQLD = os.environ.get("ACCEPTANCE_MYSQLD", r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe")
 MYSQL = os.environ.get("ACCEPTANCE_MYSQL", r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe")
 JAVA = os.environ.get("ACCEPTANCE_JAVA", r"C:\Program Files\Java\jdk-21.0.10\bin\java.exe")
@@ -96,15 +97,29 @@ def make_http_session(base_url):
 
 
 def main():
-    if not JAR.is_file():
-        raise SystemExit(f"未找到可运行 JAR: {JAR}")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("baseline", type=Path, help="基线发布 JAR")
+    parser.add_argument("upgrade", type=Path, help="升级后 JAR")
+    parser.add_argument("incompatible", type=Path, help="需要未应用迁移的 JAR")
+    args = parser.parse_args()
+    artifacts = {}
+    for role, path in vars(args).items():
+        path = path.resolve(strict=True)
+        with zipfile.ZipFile(path) as jar:
+            properties = dict(line.split("=", 1) for line in
+                              jar.read("META-INF/build-info.properties").decode("utf-8").splitlines())
+        with path.open("rb") as artifact:
+            digest = hashlib.file_digest(artifact, "sha256").hexdigest()
+        artifacts[role] = {"path": path, "sha256": digest, "gitSha": properties["build.git.commit"],
+                           "label": properties["build.releaseLabel"],
+                           "requiredMigration": properties["build.requiredMigration"]}
+    if (len({item["sha256"] for item in artifacts.values()}) != 3
+            or len({item["label"] for item in artifacts.values()}) != 3
+            or any(len(item["gitSha"]) != 40 for item in artifacts.values())):
+        parser.error("需要三个分别构建、标签不同且内嵌完整 Git SHA 的 JAR")
 
     run_id = secrets.token_hex(5)
     db_pwd = "DrillDb_" + secrets.token_hex(12)
-    git_sha = subprocess.run(
-        ["git", "rev-parse", "--short=12", "HEAD"],
-        cwd=ROOT, capture_output=True, text=True, check=False,
-    ).stdout.strip() or "local"
 
     work_dir = Path(tempfile.mkdtemp(prefix="release-drill-", dir=str(ROOT / "target")))
     print(f"发布回滚与告警演练隔离目录: {work_dir}")
@@ -202,7 +217,8 @@ def main():
 
         base_url = f"http://127.0.0.1:{JAVA_PORT}"
 
-        def start_app(tag, release_label, required_migration="018_product_search_sync", extra_args=None):
+        def start_app(tag, role, extra_args=None):
+            nonlocal java_proc
             log_path = work_dir / f"java-{tag}.log"
             app_log_file = work_dir / f"app-{tag}.json.log"
             fd = open(log_path, "wb")
@@ -216,15 +232,13 @@ def main():
                 "MQ_USERNAME": "guest",
                 "MQ_PASSWORD": "guest",
                 "MQ_VIRTUAL_HOST": "/",
-                "APP_GIT_SHA": git_sha,
-                "APP_RELEASE_LABEL": release_label,
-                "APP_REQUIRED_MIGRATION": required_migration,
+                "APP_RELEASE_GATE_TRAFFIC": "true",
                 "APP_INSTANCE_ID": f"drill-{tag}",
                 "APP_LOG_FILE": str(app_log_file),
             }
             args = [
                 JAVA, "-Xms256m", "-Xmx512m", "-Duser.timezone=Asia/Shanghai",
-                "-jar", str(JAR),
+                "-jar", str(artifacts[role]["path"]),
                 "--server.address=127.0.0.1",
                 f"--server.port={JAVA_PORT}",
                 f"--spring.data.redis.host={redis_host}",
@@ -239,15 +253,22 @@ def main():
                 f"--app.seckill.key-prefix=drill:{run_id}:sk",
                 *(extra_args or []),
             ]
-            proc = subprocess.Popen(args, cwd=work_dir, env=env, stdin=subprocess.DEVNULL, stdout=fd, stderr=fd)
+            java_proc = subprocess.Popen(args, cwd=work_dir, env=env, stdin=subprocess.DEVNULL, stdout=fd, stderr=fd)
             fd.close()
             _, ping_req, _ = make_http_session(base_url)
             wait_until(f"Java({tag})", lambda: ping_req("/api/ping", 200)[1]["message"] == "pong", 45.0)
-            return proc, app_log_file
+            if role != "incompatible":
+                wait_until(f"Java({tag}) 就绪", lambda: ping_req("/internal/ready", None)[0] == 200, 45.0)
+            return app_log_file
+
+        def check_release(snapshot, role):
+            assert snapshot["application"]["gitSha"] == artifacts[role]["gitSha"]
+            assert snapshot["application"]["releaseLabel"] == artifacts[role]["label"]
+            assert snapshot["database"]["requiredMigration"] == artifacts[role]["requiredMigration"]
 
         # === 阶段 A：首次发布 r1 与发布前/后元数据核验 ===
-        print("1) 发布 r1 (2026.11.28-r1) 并核验版本与迁移快照...")
-        java_proc, _ = start_app("r1", "2026.11.28-r1")
+        print("1) 发布基线 JAR 并核验版本与迁移快照...")
+        start_app("r1", "baseline")
         buyer_jar, buyer_req, buyer_write = make_http_session(base_url)
         admin_jar, admin_req, admin_write = make_http_session(base_url)
 
@@ -262,8 +283,7 @@ def main():
         _, r1_release = admin_req("/api/admin/operations/release", 200)
         raw_release_str = json.dumps(r1_release, ensure_ascii=False)
         assert db_pwd not in raw_release_str and "password" not in raw_release_str.lower()
-        assert r1_release["application"]["gitSha"] == git_sha
-        assert r1_release["application"]["releaseLabel"] == "2026.11.28-r1"
+        check_release(r1_release, "baseline")
         assert r1_release["database"]["compatible"] is True
         assert len(r1_release["database"]["appliedMigrations"]) == 18
 
@@ -279,16 +299,16 @@ def main():
         wait_until("r1 Outbox SENT", lambda: sql(f"SELECT status FROM order_timeout_outbox WHERE order_id={order1_id}") == "SENT")
 
         # === 阶段 B：平滑升级 r1 -> r2 ===
-        print("2) 平滑升级至 r2 (2026.11.28-r2) 并验证业务与历史订单连续性...")
+        print("2) 启动升级 JAR 并验证业务与历史订单连续性...")
         kill_proc(java_proc)
-        java_proc, _ = start_app("r2", "2026.11.28-r2")
+        start_app("r2", "upgrade")
         buyer_jar.clear()
         admin_jar.clear()
         buyer_write("/api/auth/login", 204, buyer_creds, form=True)
         admin_write("/api/auth/login", 204, admin_creds, form=True)
 
         _, r2_release = admin_req("/api/admin/operations/release", 200)
-        assert r2_release["application"]["releaseLabel"] == "2026.11.28-r2"
+        check_release(r2_release, "upgrade")
         assert r2_release["database"]["compatible"] is True
         assert buyer_write(f"/api/orders/{order1_id}/pay", 200)["status"] == "PAID"
         order2 = buyer_write("/api/orders", 201, {"productId": 1, "quantity": 1, "addressId": addr_id, "requestId": "r2-order-2"})
@@ -297,23 +317,26 @@ def main():
         # === 阶段 C：部署不兼容版本 r3-bad 拦截并快速回滚至 r2 ===
         print("3) 模拟部署要求未执行迁移 019 的故障版本 r3-bad -> 触发 503 拦截 -> 执行回滚至 r2...")
         kill_proc(java_proc)
-        java_proc, r3_log_file = start_app("r3-bad", "2026.11.28-r3-bad", required_migration="019_unapplied_breaking_migration")
-        admin_jar.clear()
-        admin_write("/api/auth/login", 204, admin_creds, form=True)
-        r3_status, r3_release = admin_req("/api/admin/operations/release", 503)
-        assert r3_status == 503
-        assert r3_release["database"]["compatible"] is False
-        assert r3_release["database"]["missingMigrations"] == ["019_unapplied_breaking_migration"]
+        r3_log_file = start_app("r3-bad", "incompatible")
+        required = artifacts["incompatible"]["requiredMigration"]
+        wait_until("不兼容产物已完成迁移校验", lambda: r3_log_file.is_file() and any(
+            row.get("event") == "release_schema_incompatible"
+            and row.get("gitSha") == artifacts["incompatible"]["gitSha"]
+            and row.get("releaseLabel") == artifacts["incompatible"]["label"]
+            and row.get("missingMigrations") == [required]
+            for row in map(json.loads, r3_log_file.read_text(encoding="utf-8").splitlines())))
+        r3_status, _ = admin_req("/internal/ready", 503)
+        r3_business_status, _ = buyer_req("/api/products", 503)
 
         # 立即回滚回 r2
         kill_proc(java_proc)
-        java_proc, _ = start_app("r2-rollback", "2026.11.28-r2")
+        start_app("r2-rollback", "upgrade")
         buyer_jar.clear()
         admin_jar.clear()
         buyer_write("/api/auth/login", 204, buyer_creds, form=True)
         admin_write("/api/auth/login", 204, admin_creds, form=True)
         _, rb_release = admin_req("/api/admin/operations/release", 200)
-        assert rb_release["application"]["releaseLabel"] == "2026.11.28-r2"
+        check_release(rb_release, "upgrade")
         assert rb_release["database"]["compatible"] is True
         assert buyer_req(f"/api/orders/{order1_id}", 200)[1]["status"] == "PAID"
         assert buyer_req(f"/api/orders/{order2_id}", 200)[1]["status"] == "PENDING_PAYMENT"
@@ -330,9 +353,9 @@ def main():
 
         kill_proc(java_proc)
         sql(f"UPDATE trade_order SET expires_at=DATE_SUB(NOW(), INTERVAL 5 SECOND) WHERE id IN ({b1_id},{b2_id})")
-        java_proc, alert_log_file = start_app(
+        alert_log_file = start_app(
             "r2-alert",
-            "2026.11.28-r2",
+            "upgrade",
             extra_args=[
                 "--app.order-message.enabled=false",
                 "--app.order-timeout.enabled=false",
@@ -365,9 +388,9 @@ def main():
 
         # 恢复消费者运行，验证自动排空积压、精确回补库存且告警归零
         kill_proc(java_proc)
-        java_proc, recovery_log_file = start_app(
+        recovery_log_file = start_app(
             "r2-recovered",
-            "2026.11.28-r2",
+            "upgrade",
             extra_args=[
                 "--app.order-message.enabled=true",
                 "--app.order-message.monitor.interval-ms=1000",
@@ -399,8 +422,8 @@ def main():
         summary = {
             "measuredAt": datetime.now(timezone.utc).isoformat(),
             "runId": run_id,
-            "gitSha": git_sha,
-            "jarSha256": hashlib.sha256(JAR.read_bytes()).hexdigest(),
+            "artifacts": {role: {key: value for key, value in item.items() if key != "path"}
+                          for role, item in artifacts.items()},
             "releaseUpgrade": {
                 "fromLabel": r1_release["application"]["releaseLabel"],
                 "toLabel": r2_release["application"]["releaseLabel"],
@@ -409,9 +432,10 @@ def main():
                 "secretLeakCheckPassed": True,
             },
             "incompatibleReleaseAndRollback": {
-                "rejectedLabel": r3_release["application"]["releaseLabel"],
-                "httpStatus": r3_status,
-                "missingMigrations": r3_release["database"]["missingMigrations"],
+                "rejectedLabel": artifacts["incompatible"]["label"],
+                "readinessHttpStatus": r3_status,
+                "businessHttpStatus": r3_business_status,
+                "missingMigrations": [required],
                 "rolledBackToLabel": rb_release["application"]["releaseLabel"],
                 "ordersAndStockIntact": True,
             },

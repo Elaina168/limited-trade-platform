@@ -1,9 +1,5 @@
 package com.elaina.limitedtrade.system;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -15,7 +11,6 @@ import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
@@ -23,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-@EnableConfigurationProperties(ReleaseProperties.class)
 public class ReleaseInfoService {
 
     private static final Logger log = LoggerFactory.getLogger(ReleaseInfoService.class);
@@ -58,14 +52,14 @@ public class ReleaseInfoService {
     );
 
     private final SchemaMigrationMapper migrationMapper;
-    private final ReleaseProperties properties;
     private final Optional<BuildProperties> buildProperties;
     private final String instanceId;
     private final FeatureFlags features;
-    private final String resolvedGitSha;
+    private final String gitSha;
+    private final String releaseLabel;
+    private final String requiredMigration;
 
     public ReleaseInfoService(SchemaMigrationMapper migrationMapper,
-                              ReleaseProperties properties,
                               Optional<BuildProperties> buildProperties,
                               @Value("${APP_INSTANCE_ID:local}") String instanceId,
                               @Value("${app.search.mode:mysql}") String searchMode,
@@ -76,17 +70,27 @@ public class ReleaseInfoService {
                               @Value("${app.order-message.monitor.enabled:false}") boolean orderMessageMonitorEnabled,
                               @Value("${app.agent.enabled:false}") boolean agentEnabled) {
         this.migrationMapper = migrationMapper;
-        this.properties = properties;
         this.buildProperties = buildProperties;
         this.instanceId = instanceId;
         this.features = new FeatureFlags(
                 searchMode, seckillEnabled, productCacheEnabled,
                 orderRateLimitEnabled, orderMessageEnabled, orderMessageMonitorEnabled, agentEnabled);
-        this.resolvedGitSha = resolveGitSha(properties.gitSha(), buildProperties, Path.of(".git"));
+        this.gitSha = buildProperties.map(b -> b.get("git.commit")).orElse("unknown");
+        this.releaseLabel = buildProperties.map(b -> b.get("releaseLabel")).orElse("local");
+        this.requiredMigration = buildProperties.map(b -> b.get("requiredMigration")).orElse("018_product_search_sync");
     }
 
     public ReleaseSnapshot snapshot() {
-        LocalDateTime now = LocalDateTime.now().withNano(0);
+        return new ReleaseSnapshot(
+                LocalDateTime.now().withNano(0),
+                new ApplicationVersion(
+                        buildProperties.map(BuildProperties::getArtifact).orElse("limited-trade-platform"),
+                        buildProperties.map(BuildProperties::getVersion).orElse("0.0.1-SNAPSHOT"),
+                        buildProperties.map(BuildProperties::getTime).orElse(null), gitSha, releaseLabel, instanceId),
+                databaseState(), features);
+    }
+
+    DatabaseMigrationState databaseState() {
         SchemaObjects objects;
         try {
             objects = new SchemaObjects(
@@ -102,7 +106,6 @@ public class ReleaseInfoService {
 
         List<String> applied = new ArrayList<>();
         List<String> missing = new ArrayList<>();
-        String required = properties.requiredMigration();
         boolean foundRequiredDefinition = false;
         boolean pastRequired = false;
 
@@ -113,70 +116,27 @@ public class ReleaseInfoService {
             } else if (!pastRequired) {
                 missing.add(probe.id());
             }
-            if (probe.id().equals(required)) {
+            if (probe.id().equals(requiredMigration)) {
                 foundRequiredDefinition = true;
                 pastRequired = true;
             }
         }
         if (!foundRequiredDefinition) {
-            missing.add(required);
+            missing.add(requiredMigration);
         }
 
         String latestDetected = applied.isEmpty() ? "NONE" : applied.getLast();
         boolean compatible = missing.isEmpty();
         if (!compatible) {
             log.atWarn().addKeyValue("event", "release_schema_incompatible")
-                    .addKeyValue("releaseLabel", properties.label())
-                    .addKeyValue("gitSha", resolvedGitSha)
-                    .addKeyValue("requiredMigration", required)
+                    .addKeyValue("releaseLabel", releaseLabel)
+                    .addKeyValue("gitSha", gitSha)
+                    .addKeyValue("requiredMigration", requiredMigration)
                     .addKeyValue("missingMigrations", missing)
                     .log("当前应用版本与数据库迁移状态不兼容");
         }
 
-        String artifact = buildProperties.map(BuildProperties::getArtifact).orElse("limited-trade-platform");
-        String version = buildProperties.map(BuildProperties::getVersion).orElse("0.0.1-SNAPSHOT");
-        Instant buildTime = buildProperties.map(BuildProperties::getTime).orElse(null);
-
-        return new ReleaseSnapshot(
-                now,
-                new ApplicationVersion(artifact, version, buildTime, resolvedGitSha, properties.label(), instanceId),
-                new DatabaseMigrationState(required, latestDetected, List.copyOf(applied), List.copyOf(missing), compatible),
-                features);
-    }
-
-    static String resolveGitSha(String configuredSha, Optional<BuildProperties> buildProps, Path gitDir) {
-        if (configuredSha != null && !configuredSha.isBlank()) {
-            return configuredSha.strip();
-        }
-        String fromBuild = buildProps.map(b -> b.get("git.commit")).filter(s -> !s.isBlank()).orElse(null);
-        if (fromBuild != null) {
-            return fromBuild.strip();
-        }
-        try {
-            Path headFile = gitDir.resolve("HEAD");
-            if (Files.isRegularFile(headFile)) {
-                String head = Files.readString(headFile, StandardCharsets.UTF_8).trim();
-                if (!head.startsWith("ref:")) {
-                    return head;
-                }
-                String ref = head.substring("ref:".length()).trim();
-                Path refFile = gitDir.resolve(ref);
-                if (Files.isRegularFile(refFile)) {
-                    return Files.readString(refFile, StandardCharsets.UTF_8).trim();
-                }
-                Path packedRefs = gitDir.resolve("packed-refs");
-                if (Files.isRegularFile(packedRefs)) {
-                    for (String line : Files.readAllLines(packedRefs, StandardCharsets.UTF_8)) {
-                        String trimmed = line.trim();
-                        if (!trimmed.startsWith("#") && trimmed.endsWith(" " + ref)) {
-                            return trimmed.split("\\s+")[0];
-                        }
-                    }
-                }
-            }
-        } catch (IOException ignored) {
-        }
-        return "unknown";
+        return new DatabaseMigrationState(requiredMigration, latestDetected, List.copyOf(applied), List.copyOf(missing), compatible);
     }
 
     private record SchemaObjects(Set<String> tables, Set<String> columns, Set<String> indexes) {
