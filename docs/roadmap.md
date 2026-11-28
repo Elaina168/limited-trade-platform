@@ -3,8 +3,9 @@
 ## 当前交付与剩余工作（2026-11-28）
 
 - 商城与交易助手的本机启动、定向验证和人工检查路线见 [项目首页](../README.md) 与 [人工验收](manual-acceptance.md)。此前各阶段的证据和限制集中在 [开发历史](project-history.md)。
-- 补强 3 已在 WSL2 Docker 29.1.3 + Compose 2.40.3 下完成全新空卷五服务健康启动、交易履约、助手 SSE 问答、容器重建数据持久化与 Redis 故障恢复验收。 [Compose 进度](learning/48-strengthening-compose.md#验收进度)
-- 补强 15 已完成发布版本与 18 项迁移兼容性暴露、平滑升级、不兼容版本拦截回滚及消息队列积压告警恢复演练。 [发布回滚演练](learning/64-release-rollback-drill.md)
+- 体验优化与硬核升级七阶段方案（[升级执行方案](plans/2026-11-27-ux-and-resume-upgrade-plan.md)）已全部验收收官：涵盖零摩擦购物车与极速结算、静默同步与导购首页、交易助手客服工作台与 [13 篇语料真实模型复评](learning/61-storefront-rag-corpus.md)、[Redis Lua + MQ 异步秒杀压测](learning/62-seckill-redis-mq-benchmark.md)、[Elasticsearch 商品检索与降级](learning/63-elasticsearch-product-search.md)，以及同级独立工程 `D:\codex\Java\spring-cloud-lab` 的 Spring Cloud Alibaba 2025（Nacos + Gateway + OpenFeign + Sentinel + MQ 延时反查一致性 + 并行聚合）全套升级与验收。
+- 补强 3 已在 WSL2 Docker 29.1.3 + Compose 2.40.3 下完成多阶段源码构建、全新空卷五服务健康启动、扩展数据导入、交易履约、助手 SSE 问答、容器重建数据持久化与 Redis 故障恢复验收。 [Compose 进度](learning/48-strengthening-compose.md#验收进度)
+- 补强 15 已完成不可变构建元数据与 18 项迁移兼容性暴露、三份独立 JAR 升级、不兼容版本就绪与流量门禁拦截回滚，以及消息队列积压告警恢复演练。 [发布回滚演练](learning/64-release-rollback-drill.md)
 
 ## 最新补强安排（2026-11-23）
 
